@@ -56,9 +56,6 @@ const AVAILABLE_MODELS = [
 
 // ── Chart helpers ─────────────────────────────────────────────────────────────
 
-/**
- * Build a padded array of CHART_MAX_POINTS nulls with data right-aligned.
- */
 function _pad(data) {
     const padded = Array(CHART_MAX_POINTS).fill(null);
     const start = CHART_MAX_POINTS - data.length;
@@ -66,20 +63,8 @@ function _pad(data) {
     return padded;
 }
 
-/**
- * Draw filled area + line for one data series onto ctx.
- * @param {CanvasRenderingContext2D} ctx
- * @param {(number|null)[]} padded  CHART_MAX_POINTS array
- * @param {number} W canvas width
- * @param {number} H canvas height
- * @param {number} max  y-axis maximum
- * @param {string} color
- * @param {string} fillColor
- */
 function _drawSeries(ctx, padded, W, H, max, color, fillColor) {
     const xStep = W / (CHART_MAX_POINTS - 1);
-
-    // Fill
     ctx.beginPath();
     let started = false;
     padded.forEach((v, i) => {
@@ -96,8 +81,6 @@ function _drawSeries(ctx, padded, W, H, max, color, fillColor) {
         ctx.fillStyle = fillColor;
         ctx.fill();
     }
-
-    // Line
     ctx.beginPath();
     started = false;
     padded.forEach((v, i) => {
@@ -113,24 +96,13 @@ function _drawSeries(ctx, padded, W, H, max, color, fillColor) {
     ctx.stroke();
 }
 
-/**
- * Draw crosshair + tooltip bubble at hovered index.
- * @param {CanvasRenderingContext2D} ctx
- * @param {number} hoverIdx  index in padded array (0-based)
- * @param {number} W
- * @param {number} H
- * @param {{value: number|null, label: string, color: string}[]} series
- * @param {number[]} maxArr  [max for series 0, max for series 1, ...]
- * @param {number|null} ts  unix timestamp ms (nullable)
- */
 function _drawTooltip(ctx, hoverIdx, W, H, series, maxArr, ts) {
     const xStep = W / (CHART_MAX_POINTS - 1);
     const x = hoverIdx * xStep;
 
-    // Vertical crosshair line
     ctx.save();
     ctx.setLineDash([3, 3]);
-    ctx.strokeStyle = "rgba(100,100,100,0.4)";
+    ctx.strokeStyle = "rgba(150,150,150,0.4)";
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(x, 0);
@@ -138,7 +110,6 @@ function _drawTooltip(ctx, hoverIdx, W, H, series, maxArr, ts) {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Draw dot on each series at hover point
     series.forEach((s, si) => {
         if (s.value === null) return;
         const max = maxArr[si] || 100;
@@ -152,28 +123,31 @@ function _drawTooltip(ctx, hoverIdx, W, H, series, maxArr, ts) {
         ctx.stroke();
     });
 
-    // Tooltip box
     const timeStr = ts ? new Date(ts).toLocaleTimeString() : "";
-    const lines = series
-        .filter(s => s.value !== null)
-        .map(s => `${s.label}: ${s.formatted}`);
-    if (timeStr) lines.unshift(timeStr);
+    const activeSeries = series.filter(s => s.value !== null);
+    const lines = [];
+    if (timeStr) lines.push({ text: timeStr, isTime: true });
+    activeSeries.forEach(s => lines.push({ text: `${s.label}: ${s.formatted}`, color: s.color, isTime: false }));
 
-    const PAD = 8;
-    const LINE_H = 16;
-    const boxW = 130;
+    const PAD = 10;
+    const LINE_H = 17;
+
+    // Measure actual text widths to size box correctly
+    ctx.font = "10px sans-serif";
+    const timeW = timeStr ? ctx.measureText(timeStr).width : 0;
+    ctx.font = "11px sans-serif";
+    const seriesW = activeSeries.length
+        ? Math.max(...activeSeries.map(s => ctx.measureText(`${s.label}: ${s.formatted}`).width + 16))
+        : 0;
+    const boxW = Math.ceil(Math.max(timeW, seriesW)) + PAD * 2 + 4;
     const boxH = PAD * 2 + lines.length * LINE_H;
+    let bx = x + 12;
+    if (bx + boxW > W) bx = x - boxW - 12;
+    const by = Math.min(4, H - boxH - 4);
 
-    // Position: flip left if near right edge
-    let bx = x + 10;
-    if (bx + boxW > W) bx = x - boxW - 10;
-    let by = 4;
-    if (by + boxH > H) by = H - boxH - 4;
-
-    // Shadow
-    ctx.shadowColor = "rgba(0,0,0,0.15)";
-    ctx.shadowBlur = 6;
-    ctx.fillStyle = "rgba(30,30,30,0.88)";
+    ctx.shadowColor = "rgba(0,0,0,0.25)";
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = "rgba(25,25,25,0.92)";
     const r = 6;
     ctx.beginPath();
     ctx.moveTo(bx + r, by);
@@ -189,22 +163,20 @@ function _drawTooltip(ctx, hoverIdx, W, H, series, maxArr, ts) {
     ctx.fill();
     ctx.shadowBlur = 0;
 
-    // Text
     lines.forEach((line, i) => {
-        const isTime = i === 0 && timeStr;
-        ctx.font = isTime ? "10px sans-serif" : "11px sans-serif";
-        ctx.fillStyle = isTime ? "#aaa" : "#fff";
-        // Colored dot for series lines
-        if (!isTime && series.filter(s => s.value !== null)[i - (timeStr ? 1 : 0)]) {
-            const s = series.filter(s => s.value !== null)[i - (timeStr ? 1 : 0)];
-            ctx.beginPath();
-            ctx.arc(bx + PAD + 4, by + PAD + i * LINE_H + 4, 3, 0, Math.PI * 2);
-            ctx.fillStyle = s.color;
-            ctx.fill();
-            ctx.fillStyle = "#fff";
-            ctx.fillText(line, bx + PAD + 12, by + PAD + i * LINE_H + LINE_H / 2 + 3);
+        const ty = by + PAD + i * LINE_H + LINE_H / 2 + 3;
+        if (line.isTime) {
+            ctx.font = "10px sans-serif";
+            ctx.fillStyle = "#999";
+            ctx.fillText(line.text, bx + PAD, ty);
         } else {
-            ctx.fillText(line, bx + PAD, by + PAD + i * LINE_H + LINE_H / 2 + 3);
+            ctx.beginPath();
+            ctx.arc(bx + PAD + 4, ty - 4, 3.5, 0, Math.PI * 2);
+            ctx.fillStyle = line.color;
+            ctx.fill();
+            ctx.font = "11px sans-serif";
+            ctx.fillStyle = "#eee";
+            ctx.fillText(line.text, bx + PAD + 13, ty);
         }
     });
 
@@ -212,100 +184,108 @@ function _drawTooltip(ctx, hoverIdx, W, H, series, maxArr, ts) {
 }
 
 /**
- * Render sparkline with hover tooltip support.
- * Returns a cleanup function to remove event listeners.
+ * Create a chart instance on a canvas — sets up event listeners ONCE.
+ * Returns an object with:
+ *   .update(data, timestamps)  — call every poll cycle to redraw with latest data
+ *   .destroy()                 — remove event listeners
  */
-function drawSparkline(canvas, data, color, fillColor, timestamps = [], formatFn = null, label = "") {
-    if (!canvas) return () => {};
+function createSparkline(canvas, color, fillColor, formatFn, label) {
+    if (!canvas) return { update: () => {}, destroy: () => {} };
     const ctx = canvas.getContext("2d");
     const W = canvas.width;
     const H = canvas.height;
-    const padded = _pad(data);
-    const paddedTs = _pad(timestamps);
-    const fmt = formatFn || (v => `${v}%`);
+    const fmt = formatFn || (v => `${v.toFixed(1)}%`);
 
-    const render = (hoverIdx = null) => {
+    let _padded = Array(CHART_MAX_POINTS).fill(null);
+    let _paddedTs = Array(CHART_MAX_POINTS).fill(null);
+    let _hoverIdx = null;
+
+    const render = () => {
         ctx.clearRect(0, 0, W, H);
-        _drawSeries(ctx, padded, W, H, 100, color, fillColor);
-
-        if (hoverIdx !== null && padded[hoverIdx] !== null) {
-            _drawTooltip(ctx, hoverIdx, W, H,
-                [{ value: padded[hoverIdx], label, color, formatted: fmt(padded[hoverIdx]) }],
-                [100],
-                paddedTs[hoverIdx]
+        _drawSeries(ctx, _padded, W, H, 100, color, fillColor);
+        if (_hoverIdx !== null && _padded[_hoverIdx] !== null) {
+            _drawTooltip(ctx, _hoverIdx, W, H,
+                [{ value: _padded[_hoverIdx], label, color, formatted: fmt(_padded[_hoverIdx]) }],
+                [100], _paddedTs[_hoverIdx]
             );
         }
     };
 
-    render();
-
-    // Mouse events
     const onMove = (e) => {
         const rect = canvas.getBoundingClientRect();
         const mx = (e.clientX - rect.left) * (W / rect.width);
-        const xStep = W / (CHART_MAX_POINTS - 1);
-        const idx = Math.round(mx / xStep);
-        render(Math.max(0, Math.min(CHART_MAX_POINTS - 1, idx)));
+        _hoverIdx = Math.max(0, Math.min(CHART_MAX_POINTS - 1, Math.round(mx / (W / (CHART_MAX_POINTS - 1)))));
+        render();
     };
-    const onLeave = () => render(null);
+    const onLeave = () => { _hoverIdx = null; render(); };
 
     canvas.addEventListener("mousemove", onMove);
     canvas.addEventListener("mouseleave", onLeave);
 
-    return () => {
-        canvas.removeEventListener("mousemove", onMove);
-        canvas.removeEventListener("mouseleave", onLeave);
+    return {
+        update(data, timestamps = []) {
+            _padded   = _pad(data);
+            _paddedTs = _pad(timestamps);
+            render();
+        },
+        destroy() {
+            canvas.removeEventListener("mousemove", onMove);
+            canvas.removeEventListener("mouseleave", onLeave);
+        },
     };
 }
 
-/**
- * Network sparkline with 2 series and hover tooltip.
- */
-function drawNetSparkline(canvas, recvData, sentData, maxKbps, timestamps = [], formatFn = null) {
-    if (!canvas) return () => {};
+function createNetSparkline(canvas, formatFn) {
+    if (!canvas) return { update: () => {}, destroy: () => {} };
     const ctx = canvas.getContext("2d");
     const W = canvas.width;
     const H = canvas.height;
-    const max = maxKbps || 1;
-    const paddedRecv = _pad(recvData);
-    const paddedSent = _pad(sentData);
-    const paddedTs   = _pad(timestamps);
-    const fmt = formatFn || (v => v >= 1024 ? `${(v/1024).toFixed(1)} MB/s` : `${v.toFixed(1)} KB/s`);
+    const fmt = formatFn || (v => v >= 1024 ? `${(v / 1024).toFixed(1)} MB/s` : `${v.toFixed(1)} KB/s`);
 
-    const render = (hoverIdx = null) => {
+    let _paddedRecv = Array(CHART_MAX_POINTS).fill(null);
+    let _paddedSent = Array(CHART_MAX_POINTS).fill(null);
+    let _paddedTs   = Array(CHART_MAX_POINTS).fill(null);
+    let _maxKbps    = 1;
+    let _hoverIdx   = null;
+
+    const render = () => {
         ctx.clearRect(0, 0, W, H);
-        _drawSeries(ctx, paddedRecv, W, H, max, "#0d6efd", "rgba(13,110,253,0.15)");
-        _drawSeries(ctx, paddedSent, W, H, max, "#fd7e14", "rgba(253,126,20,0.15)");
-
-        if (hoverIdx !== null && (paddedRecv[hoverIdx] !== null || paddedSent[hoverIdx] !== null)) {
-            _drawTooltip(ctx, hoverIdx, W, H,
+        _drawSeries(ctx, _paddedRecv, W, H, _maxKbps, "#0d6efd", "rgba(13,110,253,0.15)");
+        _drawSeries(ctx, _paddedSent, W, H, _maxKbps, "#fd7e14", "rgba(253,126,20,0.15)");
+        if (_hoverIdx !== null && (_paddedRecv[_hoverIdx] !== null || _paddedSent[_hoverIdx] !== null)) {
+            _drawTooltip(ctx, _hoverIdx, W, H,
                 [
-                    { value: paddedRecv[hoverIdx], label: "↓ Recv", color: "#0d6efd", formatted: fmt(paddedRecv[hoverIdx] ?? 0) },
-                    { value: paddedSent[hoverIdx], label: "↑ Sent", color: "#fd7e14", formatted: fmt(paddedSent[hoverIdx] ?? 0) },
+                    { value: _paddedRecv[_hoverIdx], label: "↓ Recv", color: "#0d6efd", formatted: fmt(_paddedRecv[_hoverIdx] ?? 0) },
+                    { value: _paddedSent[_hoverIdx], label: "↑ Sent", color: "#fd7e14", formatted: fmt(_paddedSent[_hoverIdx] ?? 0) },
                 ],
-                [max, max],
-                paddedTs[hoverIdx]
+                [_maxKbps, _maxKbps], _paddedTs[_hoverIdx]
             );
         }
     };
 
-    render();
-
     const onMove = (e) => {
         const rect = canvas.getBoundingClientRect();
         const mx = (e.clientX - rect.left) * (W / rect.width);
-        const xStep = W / (CHART_MAX_POINTS - 1);
-        const idx = Math.round(mx / xStep);
-        render(Math.max(0, Math.min(CHART_MAX_POINTS - 1, idx)));
+        _hoverIdx = Math.max(0, Math.min(CHART_MAX_POINTS - 1, Math.round(mx / (W / (CHART_MAX_POINTS - 1)))));
+        render();
     };
-    const onLeave = () => render(null);
+    const onLeave = () => { _hoverIdx = null; render(); };
 
     canvas.addEventListener("mousemove", onMove);
     canvas.addEventListener("mouseleave", onLeave);
 
-    return () => {
-        canvas.removeEventListener("mousemove", onMove);
-        canvas.removeEventListener("mouseleave", onLeave);
+    return {
+        update(recvData, sentData, maxKbps, timestamps = []) {
+            _paddedRecv = _pad(recvData);
+            _paddedSent = _pad(sentData);
+            _paddedTs   = _pad(timestamps);
+            _maxKbps    = maxKbps || 1;
+            render();
+        },
+        destroy() {
+            canvas.removeEventListener("mousemove", onMove);
+            canvas.removeEventListener("mouseleave", onLeave);
+        },
     };
 }
 
@@ -346,8 +326,8 @@ export class OllamaDashboard extends Component {
         this.netCanvasRef   = useRef("netCanvas");
         this.gpuCanvasRef   = useRef("gpuCanvas");
 
-        // Chart event listener cleanup functions
-        this._chartCleanups = [];
+        // Chart instances (created once in onMounted, persist across updates)
+        this._charts = { cpu: null, ram: null, net: null, gpu: null };
 
         this._pollInterval    = null;
         this._metricsInterval = null;
@@ -356,13 +336,23 @@ export class OllamaDashboard extends Component {
             this._restorePullTasks();
             await this.loadData();
             this._startPollingIfNeeded();
+        });
+
+        onMounted(() => {
+            // Create chart instances once — event listeners live here permanently
+            const fmtNet = v => v >= 1024 ? `${(v/1024).toFixed(1)} MB/s` : `${v.toFixed(1)} KB/s`;
+            this._charts.cpu = createSparkline(this.cpuCanvasRef.el, "#0d6efd", "rgba(13,110,253,0.15)", v => `${v.toFixed(1)}%`, "CPU");
+            this._charts.ram = createSparkline(this.ramCanvasRef.el, "#198754", "rgba(25,135,84,0.15)",  v => `${v.toFixed(1)}%`, "RAM");
+            this._charts.net = createNetSparkline(this.netCanvasRef.el, fmtNet);
+            this._charts.gpu = createSparkline(this.gpuCanvasRef.el,  "#dc3545", "rgba(220,53,69,0.15)", v => `${v.toFixed(1)}%`, "GPU");
+            // Start metrics polling after canvases are ready
             this._startMetrics();
         });
 
         onWillUnmount(() => {
             this._stopPolling();
             this._stopMetrics();
-            this._chartCleanups.forEach(fn => fn());
+            Object.values(this._charts).forEach(c => c?.destroy());
         });
     }
 
@@ -484,48 +474,22 @@ export class OllamaDashboard extends Component {
 
     _redrawCharts() {
         const m = this.state.metrics;
-
-        // Clean up previous event listeners
-        this._chartCleanups.forEach(fn => fn());
-        this._chartCleanups = [];
-
         const ts = m.timestamps;
+        const fmtNet = v => v >= 1024 ? `${(v/1024).toFixed(1)} MB/s` : `${v.toFixed(1)} KB/s`;
 
-        const c1 = drawSparkline(
-            this.cpuCanvasRef.el,
-            m.cpu.filter(v => v !== null),
-            "#0d6efd", "rgba(13,110,253,0.15)",
-            ts, v => `${v.toFixed(1)}%`, "CPU"
-        );
+        this._charts.cpu?.update(m.cpu.filter(v => v !== null), ts);
+        this._charts.ram?.update(m.ram.filter(v => v !== null), ts);
 
-        const c2 = drawSparkline(
-            this.ramCanvasRef.el,
-            m.ram.filter(v => v !== null),
-            "#198754", "rgba(25,135,84,0.15)",
-            ts, v => `${v.toFixed(1)}%`, "RAM"
-        );
-
-        // Network: scale to max seen
-        const allNet = [...m.netRecv, ...m.netSent].filter(v => v !== null);
+        const allNet  = [...m.netRecv, ...m.netSent].filter(v => v !== null);
         const maxKbps = allNet.length ? Math.max(...allNet, 1) : 1;
-        const fmtNet = v => v >= 1024 ? `${(v / 1024).toFixed(1)} MB/s` : `${v.toFixed(1)} KB/s`;
-        const c3 = drawNetSparkline(
-            this.netCanvasRef.el,
+        this._charts.net?.update(
             m.netRecv.filter(v => v !== null),
             m.netSent.filter(v => v !== null),
-            maxKbps, ts, fmtNet
+            maxKbps, ts
         );
 
-        this._chartCleanups = [c1, c2, c3];
-
-        if (this.gpuCanvasRef.el && m.gpu.some(v => v !== null)) {
-            const c4 = drawSparkline(
-                this.gpuCanvasRef.el,
-                m.gpu.filter(v => v !== null),
-                "#dc3545", "rgba(220,53,69,0.15)",
-                ts, v => `${v.toFixed(1)}%`, "GPU"
-            );
-            this._chartCleanups.push(c4);
+        if (m.gpu.some(v => v !== null)) {
+            this._charts.gpu?.update(m.gpu.filter(v => v !== null), ts);
         }
     }
 
