@@ -18,11 +18,13 @@ _logger = logging.getLogger(__name__)
 # 1. Patch PROVIDERS list to include Ollama
 # =============================================================================
 
-OLLAMA_PROVIDER = llm_providers.Provider(
-    name="ollama",
-    display_name="Ollama (Local)",
-    embedding_model="nomic-embed-text",
-    llms=[
+# Build provider kwargs dynamically to support different versions of the ai module.
+# Some versions have an extra 'embedding_config' field in the Provider namedtuple.
+_ollama_provider_kwargs = {
+    "name": "ollama",
+    "display_name": "Ollama (Local)",
+    "embedding_model": "nomic-embed-text",
+    "llms": [
         # Small models (< 4GB RAM)
         ("qwen2.5:0.5b", "Qwen 2.5 0.5B (Local)"),
         ("qwen2.5:1.5b", "Qwen 2.5 1.5B (Local)"),
@@ -52,7 +54,13 @@ OLLAMA_PROVIDER = llm_providers.Provider(
         ("llama3.1:70b", "★ Llama 3.1 70B (Local)"),
         ("deepseek-r1:70b", "★ DeepSeek R1 70B (Local)"),
     ],
-)
+}
+
+# Add embedding_config if the Provider namedtuple expects it
+if "embedding_config" in llm_providers.Provider._fields:
+    _ollama_provider_kwargs["embedding_config"] = {}
+
+OLLAMA_PROVIDER = llm_providers.Provider(**_ollama_provider_kwargs)
 
 # Add Ollama to the providers list
 llm_providers.PROVIDERS.append(OLLAMA_PROVIDER)
