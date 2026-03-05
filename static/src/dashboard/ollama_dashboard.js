@@ -68,6 +68,8 @@ function _setupCanvas(canvas) {
     ctx.scale(dpr, dpr);
     return { W, H };
 }
+
+function _pad(data) {
     const padded = Array(CHART_MAX_POINTS).fill(null);
     const start = CHART_MAX_POINTS - data.length;
     data.forEach((v, i) => { padded[start + i] = v; });
