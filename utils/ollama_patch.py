@@ -23,19 +23,34 @@ OLLAMA_PROVIDER = llm_providers.Provider(
     display_name="Ollama (Local)",
     embedding_model="nomic-embed-text",
     llms=[
+        # Small models (< 4GB RAM)
         ("qwen2.5:0.5b", "Qwen 2.5 0.5B (Local)"),
         ("qwen2.5:1.5b", "Qwen 2.5 1.5B (Local)"),
         ("qwen2.5:3b", "Qwen 2.5 3B (Local)"),
-        ("qwen2.5:7b", "Qwen 2.5 7B (Local)"),
-        ("llama3.1", "Llama 3.1 8B (Local)"),
         ("llama3.2:1b", "Llama 3.2 1B (Local)"),
         ("llama3.2:3b", "Llama 3.2 3B (Local)"),
         ("phi4-mini", "Phi-4 Mini 3.8B (Local)"),
-        ("mistral", "Mistral 7B (Local)"),
         ("gemma3:1b", "Gemma 3 1B (Local)"),
         ("gemma3:4b", "Gemma 3 4B (Local)"),
         ("deepseek-r1:1.5b", "DeepSeek R1 1.5B (Local)"),
+        # Medium models (4-8GB RAM)
+        ("qwen2.5:7b", "Qwen 2.5 7B (Local)"),
+        ("llama3.1", "Llama 3.1 8B (Local)"),
+        ("mistral", "Mistral 7B (Local)"),
         ("deepseek-r1:7b", "DeepSeek R1 7B (Local)"),
+        ("gemma3:12b", "Gemma 3 12B (Local)"),
+        # Large models (8-20GB RAM) — need 16GB+ free
+        ("qwen2.5:14b", "Qwen 2.5 14B (Local)"),
+        ("deepseek-r1:14b", "DeepSeek R1 14B (Local)"),
+        ("phi4", "Phi-4 14B (Local)"),
+        ("mistral-small", "Mistral Small 24B (Local)"),
+        ("command-r", "Command-R 35B (Local)"),
+        # XL models (20-48GB RAM) — need 32GB+ free
+        ("qwen2.5:32b", "Qwen 2.5 32B (Local)"),
+        ("deepseek-r1:32b", "DeepSeek R1 32B (Local)"),
+        ("qwen2.5:72b", "★ Qwen 2.5 72B (Local)"),
+        ("llama3.1:70b", "★ Llama 3.1 70B (Local)"),
+        ("deepseek-r1:70b", "★ DeepSeek R1 70B (Local)"),
     ],
 )
 

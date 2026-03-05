@@ -22,6 +22,7 @@ Integrate **Ollama** (Local LLM) into Odoo 19, enabling the use of AI models run
 Add to your `docker-compose.yml`:
 
 ```yaml
+# Small model
 services:
   ollama:
     image: ollama/ollama:latest
@@ -34,6 +35,29 @@ services:
       resources:
         limits:
           memory: 3G
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+
+# Big model
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h        # Keep model in RAM for 24h (faster responses)
+      - OLLAMA_NUM_PARALLEL=8         # Handle 8 concurrent requests
+      - OLLAMA_MAX_LOADED_MODELS=2    # Keep 2 models loaded simultaneously
+      - OLLAMA_CONTEXT_LENGTH=8192    # 8K context window
+    deploy:
+      resources:
+        limits:
+          memory: 48G
     restart: unless-stopped
 
 volumes:
