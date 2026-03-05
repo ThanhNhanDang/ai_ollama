@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="ai_ollama.LlmModelSelectionField" t-inherit="web.SelectionField" t-inherit-mode="primary">
+        <xpath expr="//SelectMenu" position="attributes">
+            <attribute name="class">'border-0 o_llm_model_selection'</attribute>
+        </xpath>
+        <xpath expr="//SelectMenu" position="inside">
+            <t t-set-slot="choice" t-slot-scope="slotScope">
+                <div class="d-flex align-items-center justify-content-between w-100">
+                    <span t-esc="slotScope.data.label"/>
+                    <span t-if="slotScope.data.isLocal and slotScope.data.isPulled"
+                          class="badge text-bg-success ms-2">Pulled</span>
+                    <span t-elif="slotScope.data.isLocal"
+                          class="badge text-bg-warning ms-2">Not pulled</span>
+                </div>
+            </t>
+        </xpath>
+    </t>
+
+</templates>

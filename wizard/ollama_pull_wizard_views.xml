@@ -7,13 +7,17 @@
         <field name="arch" type="xml">
             <form string="Pull Ollama Model">
                 <group>
-                    <field name="model_to_pull" widget="selection"/>
+                    <field name="model_to_pull"/>
                 </group>
+                <div invisible="not resource_warning"
+                     class="alert alert-warning mb-3" role="alert">
+                    <field name="resource_warning" nolabel="1"/>
+                </div>
                 <div class="text-muted mb-3" style="font-size: 12px;">
                     Browse all models at <a href="https://ollama.com/library" target="_blank">ollama.com/library</a>
                 </div>
                 <footer>
-                    <button name="action_pull" type="object" string="⬇ Pull Model" class="btn-primary"/>
+                    <button name="action_pull" type="object" string="Pull Model" class="btn-primary"/>
                     <button string="Cancel" special="cancel" class="btn-secondary"/>
                 </footer>
             </form>

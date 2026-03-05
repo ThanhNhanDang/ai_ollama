@@ -1,0 +1,317 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="ai_ollama.Dashboard">
+        <div class="o_action o_ollama_dashboard">
+            <div class="o_content p-4">
+
+                <!-- Header -->
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2 class="mb-0">Ollama Dashboard</h2>
+                    <button class="btn btn-secondary btn-sm" t-on-click="onRefresh" t-att-disabled="state.loading">
+                        <i class="fa fa-refresh me-1"/> Refresh
+                    </button>
+                </div>
+
+                <!-- Loading -->
+                <div t-if="state.loading" class="text-center py-5">
+                    <i class="fa fa-spinner fa-spin fa-2x text-muted"/>
+                    <p class="text-muted mt-2">Loading server data...</p>
+                </div>
+
+                <!-- Error: not connected -->
+                <div t-elif="!state.data or !state.data.connected" class="alert alert-danger">
+                    <i class="fa fa-exclamation-triangle me-2"/>
+                    Cannot connect to Ollama server. Make sure it is running.
+                </div>
+
+                <!-- Dashboard content -->
+                <div t-else="">
+
+                    <!-- Active Pull Tasks -->
+                    <div t-if="activePullTasks.length" class="mb-4">
+                        <t t-foreach="activePullTasks" t-as="task" t-key="task.name">
+                            <div class="alert alert-info d-flex align-items-center mb-2">
+                                <div class="flex-grow-1">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <span>
+                                            <i class="fa fa-spinner fa-spin me-2"/>
+                                            <strong>Pulling <t t-esc="task.name"/></strong>
+                                        </span>
+                                        <span class="badge text-bg-info">
+                                            <t t-esc="task.progress_pct"/>%
+                                        </span>
+                                    </div>
+                                    <div class="progress" style="height: 6px;">
+                                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-info"
+                                             t-attf-style="width: {{ task.progress_pct }}%"/>
+                                    </div>
+                                    <small class="text-muted mt-1 d-block">
+                                        <t t-esc="task.status_text"/>
+                                    </small>
+                                </div>
+                                <button class="btn btn-sm btn-outline-secondary ms-3"
+                                        t-on-click="() => this.onDismissTask(task.name)"
+                                        title="Dismiss">
+                                    <i class="fa fa-times"/>
+                                </button>
+                            </div>
+                        </t>
+                    </div>
+
+                    <!-- Resource Cards Row -->
+                    <div class="row g-3 mb-4">
+
+                        <!-- RAM Card -->
+                        <div class="col-md-4">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <h6 class="card-title mb-0">
+                                            <i class="fa fa-microchip me-1"/> RAM
+                                        </h6>
+                                        <span t-if="state.data.ram"
+                                              class="badge"
+                                              t-att-class="getStatusClass(state.data.ram.usage_pct)"
+                                              t-esc="getStatusLabel(state.data.ram.usage_pct)"/>
+                                    </div>
+                                    <div t-if="state.data.ram">
+                                        <div class="progress mb-2" style="height: 8px;">
+                                            <div class="progress-bar"
+                                                 t-att-class="state.data.ram.usage_pct > 90 ? 'bg-danger' : state.data.ram.usage_pct > 75 ? 'bg-warning' : 'bg-success'"
+                                                 t-attf-style="width: {{ state.data.ram.usage_pct }}%"/>
+                                        </div>
+                                        <small class="text-muted">
+                                            <t t-esc="state.data.ram.used_gb"/> / <t t-esc="state.data.ram.total_gb"/> GB used
+                                            (<t t-esc="state.data.ram.available_gb"/> GB free)
+                                        </small>
+                                    </div>
+                                    <div t-else="" class="text-muted">
+                                        <small>Unable to query</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- GPU Card -->
+                        <div class="col-md-4">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <h6 class="card-title mb-0">
+                                            <i class="fa fa-television me-1"/> GPU
+                                        </h6>
+                                        <span t-if="state.data.gpu"
+                                              class="badge"
+                                              t-att-class="getStatusClass(state.data.gpu.usage_pct)"
+                                              t-esc="getStatusLabel(state.data.gpu.usage_pct)"/>
+                                    </div>
+                                    <div t-if="state.data.gpu">
+                                        <div class="progress mb-2" style="height: 8px;">
+                                            <div class="progress-bar"
+                                                 t-att-class="state.data.gpu.usage_pct > 90 ? 'bg-danger' : state.data.gpu.usage_pct > 75 ? 'bg-warning' : 'bg-success'"
+                                                 t-attf-style="width: {{ state.data.gpu.usage_pct }}%"/>
+                                        </div>
+                                        <small class="text-muted">
+                                            <t t-esc="state.data.gpu.name"/><br/>
+                                            <t t-esc="state.data.gpu.used_gb"/> / <t t-esc="state.data.gpu.total_gb"/> GB used
+                                            (<t t-esc="state.data.gpu.free_gb"/> GB free)
+                                        </small>
+                                    </div>
+                                    <div t-else="" class="text-muted">
+                                        <small>No GPU detected (CPU-only mode)</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Disk Card -->
+                        <div class="col-md-4">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h6 class="card-title mb-2">
+                                        <i class="fa fa-hdd-o me-1"/> Disk
+                                    </h6>
+                                    <div t-if="state.data.disk">
+                                        <div class="progress mb-2" style="height: 8px;">
+                                            <div class="progress-bar bg-info"
+                                                 t-attf-style="width: {{ state.data.disk.usage_pct }}%"/>
+                                        </div>
+                                        <small class="text-muted">
+                                            <t t-esc="state.data.disk.used"/> / <t t-esc="state.data.disk.total"/> used
+                                            (<t t-esc="state.data.disk.free"/> free)
+                                        </small>
+                                    </div>
+                                    <div t-else="" class="text-muted">
+                                        <small>Unable to query</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Loaded Models -->
+                    <div class="card mb-4" t-if="state.data.loaded_models and state.data.loaded_models.length">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="fa fa-bolt me-1"/> Currently Loaded in Memory</h6>
+                        </div>
+                        <div class="card-body p-0">
+                            <table class="table table-sm mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Model</th>
+                                        <th>RAM</th>
+                                        <th>VRAM</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr t-foreach="state.data.loaded_models" t-as="lm" t-key="lm.name">
+                                        <td><t t-esc="lm.name"/></td>
+                                        <td><t t-esc="lm.ram_gb"/> GB</td>
+                                        <td><t t-esc="lm.vram_gb"/> GB</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Installed Models -->
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h6 class="mb-0">
+                                <i class="fa fa-database me-1"/> Installed Models
+                                <span class="badge text-bg-secondary ms-1" t-esc="state.data.models.length"/>
+                            </h6>
+                        </div>
+                        <div class="card-body p-0">
+                            <div t-if="!state.data.models.length" class="p-3 text-muted">
+                                No models installed yet. Pull one below.
+                            </div>
+                            <table t-else="" class="table table-sm mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Model</th>
+                                        <th>Size</th>
+                                        <th>Family</th>
+                                        <th>Parameters</th>
+                                        <th>Quantization</th>
+                                        <th/>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr t-foreach="state.data.models" t-as="model" t-key="model.name">
+                                        <td class="fw-bold"><t t-esc="model.name"/></td>
+                                        <td><t t-esc="model.size_gb"/> GB</td>
+                                        <td><t t-esc="model.family"/></td>
+                                        <td><t t-esc="model.parameter_size"/></td>
+                                        <td><span class="badge text-bg-light" t-esc="model.quantization"/></td>
+                                        <td class="text-end">
+                                            <button class="btn btn-sm btn-outline-danger"
+                                                    t-on-click="() => this.onDeleteModel(model.name)"
+                                                    title="Delete model">
+                                                <i class="fa fa-trash"/>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Pull New Model -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="fa fa-download me-1"/> Pull New Model</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row align-items-end g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Search and select a model</label>
+                                    <div class="position-relative">
+                                        <div class="input-group">
+                                            <span class="input-group-text">
+                                                <i class="fa fa-search"/>
+                                            </span>
+                                            <input type="text"
+                                                   class="form-control"
+                                                   placeholder="Type to search models..."
+                                                   t-att-value="state.searchQuery"
+                                                   t-on-input="onSearchInput"
+                                                   t-on-focus="onSearchFocus"
+                                                   t-on-blur="onSearchBlur"
+                                                   t-att-disabled="state.pulling"/>
+                                            <button t-if="state.pullModelId"
+                                                    class="btn btn-outline-secondary"
+                                                    t-on-click="onClearSelection"
+                                                    type="button"
+                                                    title="Clear selection">
+                                                <i class="fa fa-times"/>
+                                            </button>
+                                        </div>
+                                        <!-- Dropdown list -->
+                                        <div t-if="state.dropdownOpen and filteredModels.length"
+                                             class="position-absolute w-100 bg-white border rounded-bottom shadow-sm"
+                                             style="z-index: 1050; max-height: 250px; overflow-y: auto; top: 100%;">
+                                            <t t-foreach="filteredModels" t-as="m" t-key="m.id">
+                                                <div t-att-class="'px-3 py-2 d-flex justify-content-between align-items-center cursor-pointer ' + (m.installed ? 'text-muted bg-light' : 'hover-bg-light')"
+                                                     t-on-mousedown.prevent="() => !m.installed and this.onSelectModel(m.id)"
+                                                     style="cursor: pointer;"
+                                                     t-att-style="m.installed ? 'cursor: not-allowed; opacity: 0.6;' : 'cursor: pointer;'">
+                                                    <div>
+                                                        <span t-att-class="m.installed ? '' : 'fw-semibold'">
+                                                            <t t-esc="m.name"/>
+                                                        </span>
+                                                        <small class="text-muted ms-2"><t t-esc="m.size"/></small>
+                                                    </div>
+                                                    <span t-if="m.installed" class="badge text-bg-success">
+                                                        <i class="fa fa-check me-1"/>Installed
+                                                    </span>
+                                                </div>
+                                            </t>
+                                        </div>
+                                        <!-- No results -->
+                                        <div t-if="state.dropdownOpen and !filteredModels.length and state.searchQuery"
+                                             class="position-absolute w-100 bg-white border rounded-bottom shadow-sm p-3 text-muted"
+                                             style="z-index: 1050; top: 100%;">
+                                            No models match "<t t-esc="state.searchQuery"/>"
+                                        </div>
+                                    </div>
+                                    <!-- Selected model indicator -->
+                                    <div t-if="state.pullModelId" class="mt-1">
+                                        <small class="text-primary">
+                                            <i class="fa fa-check-circle me-1"/>
+                                            Selected: <strong t-esc="state.pullModelId"/>
+                                        </small>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <button class="btn btn-primary"
+                                            t-on-click="onPullModel"
+                                            t-att-disabled="!canPull">
+                                        <i t-att-class="state.pulling ? 'fa fa-spinner fa-spin me-1' : 'fa fa-download me-1'"/>
+                                        <t t-if="state.pulling">Pulling...</t>
+                                        <t t-else="">Pull Model</t>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Resource warning -->
+                            <div t-if="selectedModelWarning"
+                                 class="alert mt-3 mb-0"
+                                 t-att-class="'alert-' + selectedModelWarning.level">
+                                <i class="fa fa-exclamation-triangle me-1"/>
+                                <t t-esc="selectedModelWarning.message"/>
+                            </div>
+
+                            <div class="text-muted mt-2" style="font-size: 12px;">
+                                Browse all models at <a href="https://ollama.com/library" target="_blank">ollama.com/library</a>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </t>
+
+</templates>

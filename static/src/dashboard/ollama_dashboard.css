@@ -1,0 +1,7 @@
+.o_ollama_dashboard .hover-bg-light:hover {
+    background-color: #f8f9fa !important;
+}
+
+.o_ollama_dashboard .cursor-pointer {
+    cursor: pointer;
+}

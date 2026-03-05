@@ -21,7 +21,13 @@
         'security/ir.model.access.csv',
         'wizard/ollama_pull_wizard_views.xml',
         'views/res_config_settings_views.xml',
+        'views/ai_agent_views.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'ai_ollama/static/src/**/*',
+        ],
+    },
     'installable': True,
     'auto_install': False,
     'author': 'Custom',
