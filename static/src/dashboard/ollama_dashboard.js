@@ -205,7 +205,6 @@ export class OllamaDashboard extends Component {
 
         this._pollInterval    = null;
         this._metricsInterval = null;
-        this._sidecarBaseUrl  = null;
 
         onWillStart(async () => {
             this._restorePullTasks();
@@ -220,16 +219,7 @@ export class OllamaDashboard extends Component {
         });
     }
 
-    // ── Sidecar URL (mirrors res_config_settings._get_sidecar_url) ────────────
-
-    _getSidecarUrl() {
-        if (this._sidecarBaseUrl) return this._sidecarBaseUrl;
-        const base = (this.state.data?.base_url || "http://ollama:11434").replace(":11434", ":11435");
-        this._sidecarBaseUrl = base;
-        return base;
-    }
-
-    // ── LocalStorage persistence ──────────────────────────────────────────────
+        // ── LocalStorage persistence ──────────────────────────────────────────────
 
     _savePullTasks() {
         const active = {};
@@ -314,11 +304,16 @@ export class OllamaDashboard extends Component {
     }
 
     async _fetchMetrics() {
-        const url = `${this._getSidecarUrl()}/api/metrics`;
         try {
-            const resp = await fetch(url, { signal: AbortSignal.timeout(3000) });
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            const m = await resp.json();
+            const result = await this.orm.call(
+                "res.config.settings", "get_ollama_metrics", [],
+                {}, { shadow: true }   // shadow=true: no loading spinner
+            );
+            if (!result?.ok || !result?.data) {
+                this.state.metricsError = true;
+                return;
+            }
+            const m = result.data;
 
             const push = (arr, val) => {
                 arr.push(val ?? null);
@@ -379,8 +374,6 @@ export class OllamaDashboard extends Component {
         this.state.loading = true;
         try {
             this.state.data = await this.orm.call("res.config.settings", "get_ollama_dashboard_data", []);
-            // Reset sidecar URL cache so it's recalculated from new base_url
-            this._sidecarBaseUrl = null;
         } catch {
             this.state.data = null;
         }

@@ -101,6 +101,25 @@ class ResConfigSettings(models.TransientModel):
         return result
 
     @api.model
+    def get_ollama_metrics(self):
+        """RPC endpoint: return real-time metrics (CPU, RAM, Network, GPU).
+        Called by the dashboard JS every 2s — proxies to the sidecar so the
+        browser never makes a direct HTTP call (avoids Mixed Content errors).
+        """
+        base_url = self.env["ir.config_parameter"].sudo().get_param(
+            "ai.ollama_base_url", "http://ollama:11434"
+        ).rstrip("/")
+        sidecar_url = self._get_sidecar_url(base_url)
+        try:
+            resp = requests.get(f"{sidecar_url}/api/metrics", timeout=4)
+            if resp.status_code == 200:
+                return {"ok": True, "data": resp.json()}
+            return {"ok": False, "data": None}
+        except Exception as e:
+            _logger.debug("AI Ollama: metrics proxy failed: %s", e)
+            return {"ok": False, "data": None}
+
+    @api.model
     def _query_system_resources(self, base_url: str) -> dict:
         """Query RAM, GPU, Disk from the Ollama sidecar service.
 
