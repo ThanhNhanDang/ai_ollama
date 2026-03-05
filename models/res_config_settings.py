@@ -1,6 +1,5 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 import logging
-import subprocess
 import requests
 
 from odoo import api, fields, models
@@ -38,6 +37,15 @@ class ResConfigSettings(models.TransientModel):
             'tag': 'ai_ollama.Dashboard',
             'name': 'Ollama Dashboard',
         }
+
+    @api.model
+    def _get_sidecar_url(self, base_url: str) -> str:
+        """Derive sidecar URL from Ollama base URL.
+
+        Ollama:  http://ollama:11434  → Sidecar: http://ollama:11435
+        Ollama:  http://localhost:11434 → Sidecar: http://localhost:11435
+        """
+        return base_url.rstrip("/").replace(":11434", ":11435")
 
     @api.model
     def get_ollama_dashboard_data(self):
@@ -87,80 +95,44 @@ class ResConfigSettings(models.TransientModel):
         except Exception:
             pass
 
-        # 3. System resources via docker exec
-        result.update(self._query_system_resources())
+        # 3. System resources via sidecar (replaces docker exec approach)
+        result.update(self._query_system_resources(base_url))
 
         return result
 
     @api.model
-    def _query_system_resources(self):
-        """Query RAM, GPU, Disk from the Ollama container via docker exec."""
-        info = {}
+    def _query_system_resources(self, base_url: str) -> dict:
+        """Query RAM, GPU, Disk from the Ollama sidecar service.
 
-        # RAM
+        The sidecar (FastAPI) runs inside the Ollama container on port 11435
+        and exposes /api/system-info. This replaces the previous docker exec approach.
+        """
+        sidecar_url = self._get_sidecar_url(base_url)
+
         try:
-            out = subprocess.run(
-                ["docker", "exec", "ollama", "sh", "-c",
-                 "cat /proc/meminfo | grep -E 'MemTotal|MemAvailable'"],
-                capture_output=True, text=True, timeout=5,
+            resp = requests.get(f"{sidecar_url}/api/system-info", timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                info = {}
+                if data.get("ram"):
+                    info["ram"] = data["ram"]
+                if data.get("gpu"):
+                    info["gpu"] = data["gpu"]
+                if data.get("disk"):
+                    info["disk"] = data["disk"]
+                return info
+            else:
+                _logger.warning(
+                    "AI Ollama: Sidecar returned status %s from %s",
+                    resp.status_code, sidecar_url
+                )
+        except requests.exceptions.ConnectionError:
+            _logger.warning(
+                "AI Ollama: Cannot connect to sidecar at %s. "
+                "Make sure the custom Ollama image with sidecar is running.",
+                sidecar_url
             )
-            if out.returncode == 0:
-                mem = {}
-                for line in out.stdout.strip().split("\n"):
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        mem[parts[0].rstrip(":")] = int(parts[1])
-                if "MemTotal" in mem and "MemAvailable" in mem:
-                    total = mem["MemTotal"] / (1024 * 1024)
-                    available = mem["MemAvailable"] / (1024 * 1024)
-                    info["ram"] = {
-                        "total_gb": round(total, 1),
-                        "available_gb": round(available, 1),
-                        "used_gb": round(total - available, 1),
-                        "usage_pct": round((total - available) / total * 100) if total > 0 else 0,
-                    }
         except Exception as e:
-            _logger.debug("AI Ollama: Cannot read RAM info: %s", e)
+            _logger.debug("AI Ollama: Sidecar query failed: %s", e)
 
-        # GPU
-        try:
-            out = subprocess.run(
-                ["docker", "exec", "ollama", "nvidia-smi",
-                 "--query-gpu=name,memory.total,memory.free,memory.used",
-                 "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=5,
-            )
-            if out.returncode == 0 and out.stdout.strip():
-                parts = [p.strip() for p in out.stdout.strip().split(",")]
-                if len(parts) == 4:
-                    info["gpu"] = {
-                        "name": parts[0],
-                        "total_gb": round(int(parts[1]) / 1024, 1),
-                        "free_gb": round(int(parts[2]) / 1024, 1),
-                        "used_gb": round(int(parts[3]) / 1024, 1),
-                        "usage_pct": round(int(parts[3]) / int(parts[1]) * 100) if int(parts[1]) > 0 else 0,
-                    }
-        except Exception as e:
-            _logger.debug("AI Ollama: Cannot read GPU info: %s", e)
-
-        # Disk
-        try:
-            out = subprocess.run(
-                ["docker", "exec", "ollama", "df", "-h", "/root/.ollama"],
-                capture_output=True, text=True, timeout=5,
-            )
-            if out.returncode == 0:
-                lines = out.stdout.strip().split("\n")
-                if len(lines) >= 2:
-                    parts = lines[1].split()
-                    if len(parts) >= 5:
-                        info["disk"] = {
-                            "total": parts[1],
-                            "used": parts[2],
-                            "free": parts[3],
-                            "usage_pct": parts[4].rstrip("%"),
-                        }
-        except Exception as e:
-            _logger.debug("AI Ollama: Cannot read disk info: %s", e)
-
-        return info
+        return {}
