@@ -4,9 +4,9 @@
     <record id="res_config_settings_view_form_ollama" model="ir.ui.view">
         <field name="name">res.config.settings.view.form.inherit.ai.ollama</field>
         <field name="model">res.config.settings</field>
-        <field name="inherit_id" ref="ai.res_config_settings_view_form"/>
+        <field name="inherit_id" ref="ai_app.res_config_settings_view_form"/>
         <field name="arch" type="xml">
-            <xpath expr="//setting[@id='google_provider']" position="after">
+            <xpath expr="//block[@name='ai_providers']" position="inside">
                 <setting id="ollama_provider" string="Ollama - Local LLM" help="Connect to a local Ollama server for private AI processing" groups="base.group_system">
                     <field name="ollama_enabled" />
                     <div class="text-muted mt-2">

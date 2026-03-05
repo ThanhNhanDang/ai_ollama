@@ -15,7 +15,7 @@
         - Data stays on your server
         - Compatible with all Odoo AI features (chat, agents, etc.)
     """,
-    'depends': ['ai'],
+    'depends': ['ai', 'ai_app'],
     'data': [
         'views/res_config_settings_views.xml',
     ],
