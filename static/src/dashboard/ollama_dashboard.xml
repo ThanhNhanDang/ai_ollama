@@ -184,7 +184,7 @@
                                             <t t-else="">—</t>
                                         </span>
                                     </div>
-                                    <canvas t-ref="cpuCanvas" width="300" height="60"
+                                    <canvas t-ref="cpuCanvas" height="60"
                                             style="width:100%;height:60px;display:block;"/>
                                     <div class="d-flex justify-content-between mt-1">
                                         <small class="text-muted">0%</small>
@@ -210,7 +210,7 @@
                                             <t t-else="">—</t>
                                         </span>
                                     </div>
-                                    <canvas t-ref="ramCanvas" width="300" height="60"
+                                    <canvas t-ref="ramCanvas" height="60"
                                             style="width:100%;height:60px;display:block;"/>
                                     <div class="d-flex justify-content-between mt-1">
                                         <small class="text-muted">0%</small>
@@ -233,7 +233,7 @@
                                             <t t-else="">—</t>
                                         </span>
                                     </div>
-                                    <canvas t-ref="netCanvas" width="300" height="60"
+                                    <canvas t-ref="netCanvas" height="60"
                                             style="width:100%;height:60px;display:block;"/>
                                     <div class="d-flex justify-content-between mt-1">
                                         <small class="text-primary">↓ recv</small>
@@ -256,7 +256,7 @@
                                             <t t-else="">—</t>
                                         </span>
                                     </div>
-                                    <canvas t-ref="gpuCanvas" width="300" height="60"
+                                    <canvas t-ref="gpuCanvas" height="60"
                                             style="width:100%;height:60px;display:block;"/>
                                     <div class="d-flex justify-content-between mt-1">
                                         <small class="text-muted">0%</small>

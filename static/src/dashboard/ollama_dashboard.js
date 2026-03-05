@@ -56,7 +56,18 @@ const AVAILABLE_MODELS = [
 
 // ── Chart helpers ─────────────────────────────────────────────────────────────
 
-function _pad(data) {
+function _setupCanvas(canvas) {
+    if (!canvas) return { W: 0, H: 0 };
+    const dpr = window.devicePixelRatio || 1;
+    // Use CSS layout size (getBoundingClientRect gives actual rendered size)
+    const W = canvas.clientWidth  || 300;
+    const H = canvas.clientHeight || 60;
+    canvas.width  = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);
+    return { W, H };
+}
     const padded = Array(CHART_MAX_POINTS).fill(null);
     const start = CHART_MAX_POINTS - data.length;
     data.forEach((v, i) => { padded[start + i] = v; });
@@ -133,9 +144,9 @@ function _drawTooltip(ctx, hoverIdx, W, H, series, maxArr, ts) {
     const LINE_H = 17;
 
     // Measure actual text widths to size box correctly
-    ctx.font = "10px sans-serif";
+    ctx.font = "bold 11px -apple-system, BlinkMacSystemFont, sans-serif";
     const timeW = timeStr ? ctx.measureText(timeStr).width : 0;
-    ctx.font = "11px sans-serif";
+    ctx.font = "12px -apple-system, BlinkMacSystemFont, sans-serif";
     const seriesW = activeSeries.length
         ? Math.max(...activeSeries.map(s => ctx.measureText(`${s.label}: ${s.formatted}`).width + 16))
         : 0;
@@ -166,15 +177,15 @@ function _drawTooltip(ctx, hoverIdx, W, H, series, maxArr, ts) {
     lines.forEach((line, i) => {
         const ty = by + PAD + i * LINE_H + LINE_H / 2 + 3;
         if (line.isTime) {
-            ctx.font = "10px sans-serif";
-            ctx.fillStyle = "#999";
+            ctx.font = "bold 11px -apple-system, BlinkMacSystemFont, sans-serif";
+            ctx.fillStyle = "#aaa";
             ctx.fillText(line.text, bx + PAD, ty);
         } else {
             ctx.beginPath();
             ctx.arc(bx + PAD + 4, ty - 4, 3.5, 0, Math.PI * 2);
             ctx.fillStyle = line.color;
             ctx.fill();
-            ctx.font = "11px sans-serif";
+            ctx.font = "12px -apple-system, BlinkMacSystemFont, sans-serif";
             ctx.fillStyle = "#eee";
             ctx.fillText(line.text, bx + PAD + 13, ty);
         }
@@ -191,9 +202,8 @@ function _drawTooltip(ctx, hoverIdx, W, H, series, maxArr, ts) {
  */
 function createSparkline(canvas, color, fillColor, formatFn, label) {
     if (!canvas) return { update: () => {}, destroy: () => {} };
+    const { W, H } = _setupCanvas(canvas);
     const ctx = canvas.getContext("2d");
-    const W = canvas.width;
-    const H = canvas.height;
     const fmt = formatFn || (v => `${v.toFixed(1)}%`);
 
     let _padded = Array(CHART_MAX_POINTS).fill(null);
@@ -237,9 +247,8 @@ function createSparkline(canvas, color, fillColor, formatFn, label) {
 
 function createNetSparkline(canvas, formatFn) {
     if (!canvas) return { update: () => {}, destroy: () => {} };
+    const { W, H } = _setupCanvas(canvas);
     const ctx = canvas.getContext("2d");
-    const W = canvas.width;
-    const H = canvas.height;
     const fmt = formatFn || (v => v >= 1024 ? `${(v / 1024).toFixed(1)} MB/s` : `${v.toFixed(1)} KB/s`);
 
     let _paddedRecv = Array(CHART_MAX_POINTS).fill(null);
