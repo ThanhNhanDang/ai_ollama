@@ -150,6 +150,125 @@
                         </div>
                     </div>
 
+                    <!-- ═══════════════════════════════════════════════════════
+                         Real-time Charts
+                    ════════════════════════════════════════════════════════ -->
+                    <div class="card mb-4">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0">
+                                <i class="fa fa-line-chart me-1"/> Real-time Metrics
+                                <small class="text-muted ms-2" style="font-size:11px;">last 1 min · updates every 2s</small>
+                            </h6>
+                            <span t-if="state.metricsError" class="badge text-bg-warning">
+                                <i class="fa fa-exclamation-triangle me-1"/>Sidecar unreachable
+                            </span>
+                            <span t-else="" class="badge text-bg-success">
+                                <i class="fa fa-circle me-1"/>Live
+                            </span>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+
+                                <!-- CPU Chart -->
+                                <div class="col-md-4">
+                                    <div class="d-flex justify-content-between align-items-baseline mb-1">
+                                        <span class="fw-semibold" style="font-size:13px;">
+                                            <i class="fa fa-tachometer me-1 text-primary"/>CPU
+                                        </span>
+                                        <span class="text-muted" style="font-size:12px;">
+                                            <t t-if="latestCpu !== null">
+                                                <strong t-att-class="latestCpu > 90 ? 'text-danger' : latestCpu > 75 ? 'text-warning' : 'text-success'">
+                                                    <t t-esc="latestCpu"/>%
+                                                </strong>
+                                            </t>
+                                            <t t-else="">—</t>
+                                        </span>
+                                    </div>
+                                    <canvas t-ref="cpuCanvas" width="300" height="60"
+                                            style="width:100%;height:60px;display:block;"/>
+                                    <div class="d-flex justify-content-between mt-1">
+                                        <small class="text-muted">0%</small>
+                                        <small class="text-muted">100%</small>
+                                    </div>
+                                </div>
+
+                                <!-- RAM Chart -->
+                                <div class="col-md-4">
+                                    <div class="d-flex justify-content-between align-items-baseline mb-1">
+                                        <span class="fw-semibold" style="font-size:13px;">
+                                            <i class="fa fa-microchip me-1 text-success"/>RAM
+                                        </span>
+                                        <span class="text-muted" style="font-size:12px;">
+                                            <t t-if="latestRam !== null">
+                                                <strong t-att-class="latestRam > 90 ? 'text-danger' : latestRam > 75 ? 'text-warning' : 'text-success'">
+                                                    <t t-esc="latestRam"/>%
+                                                </strong>
+                                                <t t-if="state.metrics.latest.ram_used_gb !== null">
+                                                    &amp;nbsp;<span class="text-muted">(<t t-esc="state.metrics.latest.ram_used_gb"/> GB)</span>
+                                                </t>
+                                            </t>
+                                            <t t-else="">—</t>
+                                        </span>
+                                    </div>
+                                    <canvas t-ref="ramCanvas" width="300" height="60"
+                                            style="width:100%;height:60px;display:block;"/>
+                                    <div class="d-flex justify-content-between mt-1">
+                                        <small class="text-muted">0%</small>
+                                        <small class="text-muted">100%</small>
+                                    </div>
+                                </div>
+
+                                <!-- Network Chart -->
+                                <div class="col-md-4">
+                                    <div class="d-flex justify-content-between align-items-baseline mb-1">
+                                        <span class="fw-semibold" style="font-size:13px;">
+                                            <i class="fa fa-exchange me-1 text-warning"/>Network
+                                        </span>
+                                        <span class="text-muted" style="font-size:12px;">
+                                            <t t-if="latestNetRecv !== null">
+                                                <span class="text-primary">↓ <t t-esc="formatKbps(latestNetRecv)"/></span>
+                                                &amp;nbsp;
+                                                <span style="color:#fd7e14;">↑ <t t-esc="formatKbps(latestNetSent)"/></span>
+                                            </t>
+                                            <t t-else="">—</t>
+                                        </span>
+                                    </div>
+                                    <canvas t-ref="netCanvas" width="300" height="60"
+                                            style="width:100%;height:60px;display:block;"/>
+                                    <div class="d-flex justify-content-between mt-1">
+                                        <small class="text-primary">↓ recv</small>
+                                        <small style="color:#fd7e14;">↑ sent</small>
+                                    </div>
+                                </div>
+
+                                <!-- GPU Chart (only if GPU present) -->
+                                <div t-if="hasGpuMetrics" class="col-md-4">
+                                    <div class="d-flex justify-content-between align-items-baseline mb-1">
+                                        <span class="fw-semibold" style="font-size:13px;">
+                                            <i class="fa fa-television me-1 text-danger"/>GPU
+                                        </span>
+                                        <span class="text-muted" style="font-size:12px;">
+                                            <t t-if="latestGpu !== null">
+                                                <strong t-att-class="latestGpu > 90 ? 'text-danger' : latestGpu > 75 ? 'text-warning' : 'text-success'">
+                                                    <t t-esc="latestGpu"/>%
+                                                </strong>
+                                            </t>
+                                            <t t-else="">—</t>
+                                        </span>
+                                    </div>
+                                    <canvas t-ref="gpuCanvas" width="300" height="60"
+                                            style="width:100%;height:60px;display:block;"/>
+                                    <div class="d-flex justify-content-between mt-1">
+                                        <small class="text-muted">0%</small>
+                                        <small class="text-muted">100%</small>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+                    <!-- ═══════════════════════════════════════════════════ -->
+
                     <!-- Loaded Models -->
                     <div class="card mb-4" t-if="state.data.loaded_models and state.data.loaded_models.length">
                         <div class="card-header">
