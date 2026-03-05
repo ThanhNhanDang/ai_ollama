@@ -54,42 +54,41 @@ const AVAILABLE_MODELS = [
     { id: "nomic-embed-text", name: "Nomic Embed Text", size: "~0.3 GB" },
 ];
 
-// ── Tiny SVG sparkline renderer ───────────────────────────────────────────────
+// ── Chart helpers ─────────────────────────────────────────────────────────────
+
 /**
- * Render a polyline sparkline into a <canvas> element.
- * @param {HTMLCanvasElement} canvas
- * @param {number[]} data        values 0-100
- * @param {string}   color       CSS color string
- * @param {string}   fillColor   CSS color string (semi-transparent fill)
+ * Build a padded array of CHART_MAX_POINTS nulls with data right-aligned.
  */
-function drawSparkline(canvas, data, color, fillColor) {
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    const W = canvas.width;
-    const H = canvas.height;
-    ctx.clearRect(0, 0, W, H);
-
-    if (data.length < 2) return;
-
-    const max = 100;
-    const xStep = W / (CHART_MAX_POINTS - 1);
-
-    // Build points — pad left with nulls so latest value is always at right edge
+function _pad(data) {
     const padded = Array(CHART_MAX_POINTS).fill(null);
     const start = CHART_MAX_POINTS - data.length;
     data.forEach((v, i) => { padded[start + i] = v; });
+    return padded;
+}
 
-    // Draw filled area
+/**
+ * Draw filled area + line for one data series onto ctx.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {(number|null)[]} padded  CHART_MAX_POINTS array
+ * @param {number} W canvas width
+ * @param {number} H canvas height
+ * @param {number} max  y-axis maximum
+ * @param {string} color
+ * @param {string} fillColor
+ */
+function _drawSeries(ctx, padded, W, H, max, color, fillColor) {
+    const xStep = W / (CHART_MAX_POINTS - 1);
+
+    // Fill
     ctx.beginPath();
     let started = false;
     padded.forEach((v, i) => {
         if (v === null) return;
         const x = i * xStep;
-        const y = H - (v / max) * H;
+        const y = H - Math.min(v / max, 1) * (H - 2);
         if (!started) { ctx.moveTo(x, H); ctx.lineTo(x, y); started = true; }
         else ctx.lineTo(x, y);
     });
-    // Close path down to bottom
     const lastIdx = padded.reduceRight((acc, v, i) => acc === -1 && v !== null ? i : acc, -1);
     if (lastIdx >= 0) {
         ctx.lineTo(lastIdx * xStep, H);
@@ -98,13 +97,13 @@ function drawSparkline(canvas, data, color, fillColor) {
         ctx.fill();
     }
 
-    // Draw line
+    // Line
     ctx.beginPath();
     started = false;
     padded.forEach((v, i) => {
         if (v === null) return;
         const x = i * xStep;
-        const y = H - (v / max) * H;
+        const y = H - Math.min(v / max, 1) * (H - 2);
         if (!started) { ctx.moveTo(x, y); started = true; }
         else ctx.lineTo(x, y);
     });
@@ -114,57 +113,200 @@ function drawSparkline(canvas, data, color, fillColor) {
     ctx.stroke();
 }
 
-// ── Network chart uses KB/s scale (not 0-100) ─────────────────────────────────
-function drawNetSparkline(canvas, recvData, sentData, maxKbps) {
-    if (!canvas) return;
+/**
+ * Draw crosshair + tooltip bubble at hovered index.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} hoverIdx  index in padded array (0-based)
+ * @param {number} W
+ * @param {number} H
+ * @param {{value: number|null, label: string, color: string}[]} series
+ * @param {number[]} maxArr  [max for series 0, max for series 1, ...]
+ * @param {number|null} ts  unix timestamp ms (nullable)
+ */
+function _drawTooltip(ctx, hoverIdx, W, H, series, maxArr, ts) {
+    const xStep = W / (CHART_MAX_POINTS - 1);
+    const x = hoverIdx * xStep;
+
+    // Vertical crosshair line
+    ctx.save();
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = "rgba(100,100,100,0.4)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw dot on each series at hover point
+    series.forEach((s, si) => {
+        if (s.value === null) return;
+        const max = maxArr[si] || 100;
+        const y = H - Math.min(s.value / max, 1) * (H - 2);
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = s.color;
+        ctx.fill();
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+    });
+
+    // Tooltip box
+    const timeStr = ts ? new Date(ts).toLocaleTimeString() : "";
+    const lines = series
+        .filter(s => s.value !== null)
+        .map(s => `${s.label}: ${s.formatted}`);
+    if (timeStr) lines.unshift(timeStr);
+
+    const PAD = 8;
+    const LINE_H = 16;
+    const boxW = 130;
+    const boxH = PAD * 2 + lines.length * LINE_H;
+
+    // Position: flip left if near right edge
+    let bx = x + 10;
+    if (bx + boxW > W) bx = x - boxW - 10;
+    let by = 4;
+    if (by + boxH > H) by = H - boxH - 4;
+
+    // Shadow
+    ctx.shadowColor = "rgba(0,0,0,0.15)";
+    ctx.shadowBlur = 6;
+    ctx.fillStyle = "rgba(30,30,30,0.88)";
+    const r = 6;
+    ctx.beginPath();
+    ctx.moveTo(bx + r, by);
+    ctx.lineTo(bx + boxW - r, by);
+    ctx.quadraticCurveTo(bx + boxW, by, bx + boxW, by + r);
+    ctx.lineTo(bx + boxW, by + boxH - r);
+    ctx.quadraticCurveTo(bx + boxW, by + boxH, bx + boxW - r, by + boxH);
+    ctx.lineTo(bx + r, by + boxH);
+    ctx.quadraticCurveTo(bx, by + boxH, bx, by + boxH - r);
+    ctx.lineTo(bx, by + r);
+    ctx.quadraticCurveTo(bx, by, bx + r, by);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Text
+    lines.forEach((line, i) => {
+        const isTime = i === 0 && timeStr;
+        ctx.font = isTime ? "10px sans-serif" : "11px sans-serif";
+        ctx.fillStyle = isTime ? "#aaa" : "#fff";
+        // Colored dot for series lines
+        if (!isTime && series.filter(s => s.value !== null)[i - (timeStr ? 1 : 0)]) {
+            const s = series.filter(s => s.value !== null)[i - (timeStr ? 1 : 0)];
+            ctx.beginPath();
+            ctx.arc(bx + PAD + 4, by + PAD + i * LINE_H + 4, 3, 0, Math.PI * 2);
+            ctx.fillStyle = s.color;
+            ctx.fill();
+            ctx.fillStyle = "#fff";
+            ctx.fillText(line, bx + PAD + 12, by + PAD + i * LINE_H + LINE_H / 2 + 3);
+        } else {
+            ctx.fillText(line, bx + PAD, by + PAD + i * LINE_H + LINE_H / 2 + 3);
+        }
+    });
+
+    ctx.restore();
+}
+
+/**
+ * Render sparkline with hover tooltip support.
+ * Returns a cleanup function to remove event listeners.
+ */
+function drawSparkline(canvas, data, color, fillColor, timestamps = [], formatFn = null, label = "") {
+    if (!canvas) return () => {};
     const ctx = canvas.getContext("2d");
     const W = canvas.width;
     const H = canvas.height;
-    ctx.clearRect(0, 0, W, H);
+    const padded = _pad(data);
+    const paddedTs = _pad(timestamps);
+    const fmt = formatFn || (v => `${v}%`);
 
-    if (!recvData.length && !sentData.length) return;
+    const render = (hoverIdx = null) => {
+        ctx.clearRect(0, 0, W, H);
+        _drawSeries(ctx, padded, W, H, 100, color, fillColor);
 
-    const max = maxKbps || 1;
-    const xStep = W / (CHART_MAX_POINTS - 1);
-
-    const drawLine = (rawData, color, fillColor) => {
-        const padded = Array(CHART_MAX_POINTS).fill(null);
-        const start = CHART_MAX_POINTS - rawData.length;
-        rawData.forEach((v, i) => { padded[start + i] = v; });
-
-        ctx.beginPath();
-        let started = false;
-        padded.forEach((v, i) => {
-            if (v === null) return;
-            const x = i * xStep;
-            const y = H - Math.min(v / max, 1) * H;
-            if (!started) { ctx.moveTo(x, H); ctx.lineTo(x, y); started = true; }
-            else ctx.lineTo(x, y);
-        });
-        const lastIdx = padded.reduceRight((acc, v, i) => acc === -1 && v !== null ? i : acc, -1);
-        if (lastIdx >= 0) {
-            ctx.lineTo(lastIdx * xStep, H);
-            ctx.closePath();
-            ctx.fillStyle = fillColor;
-            ctx.fill();
+        if (hoverIdx !== null && padded[hoverIdx] !== null) {
+            _drawTooltip(ctx, hoverIdx, W, H,
+                [{ value: padded[hoverIdx], label, color, formatted: fmt(padded[hoverIdx]) }],
+                [100],
+                paddedTs[hoverIdx]
+            );
         }
-        ctx.beginPath();
-        started = false;
-        padded.forEach((v, i) => {
-            if (v === null) return;
-            const x = i * xStep;
-            const y = H - Math.min(v / max, 1) * H;
-            if (!started) { ctx.moveTo(x, y); started = true; }
-            else ctx.lineTo(x, y);
-        });
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        ctx.lineJoin = "round";
-        ctx.stroke();
     };
 
-    drawLine(recvData, "#0d6efd", "rgba(13,110,253,0.15)");
-    drawLine(sentData, "#fd7e14", "rgba(253,126,20,0.15)");
+    render();
+
+    // Mouse events
+    const onMove = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mx = (e.clientX - rect.left) * (W / rect.width);
+        const xStep = W / (CHART_MAX_POINTS - 1);
+        const idx = Math.round(mx / xStep);
+        render(Math.max(0, Math.min(CHART_MAX_POINTS - 1, idx)));
+    };
+    const onLeave = () => render(null);
+
+    canvas.addEventListener("mousemove", onMove);
+    canvas.addEventListener("mouseleave", onLeave);
+
+    return () => {
+        canvas.removeEventListener("mousemove", onMove);
+        canvas.removeEventListener("mouseleave", onLeave);
+    };
+}
+
+/**
+ * Network sparkline with 2 series and hover tooltip.
+ */
+function drawNetSparkline(canvas, recvData, sentData, maxKbps, timestamps = [], formatFn = null) {
+    if (!canvas) return () => {};
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width;
+    const H = canvas.height;
+    const max = maxKbps || 1;
+    const paddedRecv = _pad(recvData);
+    const paddedSent = _pad(sentData);
+    const paddedTs   = _pad(timestamps);
+    const fmt = formatFn || (v => v >= 1024 ? `${(v/1024).toFixed(1)} MB/s` : `${v.toFixed(1)} KB/s`);
+
+    const render = (hoverIdx = null) => {
+        ctx.clearRect(0, 0, W, H);
+        _drawSeries(ctx, paddedRecv, W, H, max, "#0d6efd", "rgba(13,110,253,0.15)");
+        _drawSeries(ctx, paddedSent, W, H, max, "#fd7e14", "rgba(253,126,20,0.15)");
+
+        if (hoverIdx !== null && (paddedRecv[hoverIdx] !== null || paddedSent[hoverIdx] !== null)) {
+            _drawTooltip(ctx, hoverIdx, W, H,
+                [
+                    { value: paddedRecv[hoverIdx], label: "↓ Recv", color: "#0d6efd", formatted: fmt(paddedRecv[hoverIdx] ?? 0) },
+                    { value: paddedSent[hoverIdx], label: "↑ Sent", color: "#fd7e14", formatted: fmt(paddedSent[hoverIdx] ?? 0) },
+                ],
+                [max, max],
+                paddedTs[hoverIdx]
+            );
+        }
+    };
+
+    render();
+
+    const onMove = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mx = (e.clientX - rect.left) * (W / rect.width);
+        const xStep = W / (CHART_MAX_POINTS - 1);
+        const idx = Math.round(mx / xStep);
+        render(Math.max(0, Math.min(CHART_MAX_POINTS - 1, idx)));
+    };
+    const onLeave = () => render(null);
+
+    canvas.addEventListener("mousemove", onMove);
+    canvas.addEventListener("mouseleave", onLeave);
+
+    return () => {
+        canvas.removeEventListener("mousemove", onMove);
+        canvas.removeEventListener("mouseleave", onLeave);
+    };
 }
 
 
@@ -187,12 +329,13 @@ export class OllamaDashboard extends Component {
 
             // Real-time metrics
             metrics: {
-                cpu:      [],   // % values
-                ram:      [],   // % values
-                netRecv:  [],   // KB/s
-                netSent:  [],   // KB/s
-                gpu:      [],   // % (null entries if no GPU)
-                latest:   null, // last metrics object
+                cpu:        [],   // % values
+                ram:        [],   // % values
+                netRecv:    [],   // KB/s
+                netSent:    [],   // KB/s
+                gpu:        [],   // % (null entries if no GPU)
+                timestamps: [],   // unix ms per data point
+                latest:     null,
             },
             metricsError: false,
         });
@@ -202,6 +345,9 @@ export class OllamaDashboard extends Component {
         this.ramCanvasRef   = useRef("ramCanvas");
         this.netCanvasRef   = useRef("netCanvas");
         this.gpuCanvasRef   = useRef("gpuCanvas");
+
+        // Chart event listener cleanup functions
+        this._chartCleanups = [];
 
         this._pollInterval    = null;
         this._metricsInterval = null;
@@ -216,6 +362,7 @@ export class OllamaDashboard extends Component {
         onWillUnmount(() => {
             this._stopPolling();
             this._stopMetrics();
+            this._chartCleanups.forEach(fn => fn());
         });
     }
 
@@ -320,11 +467,12 @@ export class OllamaDashboard extends Component {
                 if (arr.length > CHART_MAX_POINTS) arr.shift();
             };
 
-            push(this.state.metrics.cpu,     m.cpu_pct);
-            push(this.state.metrics.ram,     m.ram_pct);
-            push(this.state.metrics.netRecv, m.net_recv_kbps);
-            push(this.state.metrics.netSent, m.net_sent_kbps);
-            push(this.state.metrics.gpu,     m.gpu_pct);
+            push(this.state.metrics.cpu,        m.cpu_pct);
+            push(this.state.metrics.ram,        m.ram_pct);
+            push(this.state.metrics.netRecv,    m.net_recv_kbps);
+            push(this.state.metrics.netSent,    m.net_sent_kbps);
+            push(this.state.metrics.gpu,        m.gpu_pct);
+            push(this.state.metrics.timestamps, m.ts);
             this.state.metrics.latest = m;
             this.state.metricsError   = false;
 
@@ -337,34 +485,47 @@ export class OllamaDashboard extends Component {
     _redrawCharts() {
         const m = this.state.metrics;
 
-        drawSparkline(
+        // Clean up previous event listeners
+        this._chartCleanups.forEach(fn => fn());
+        this._chartCleanups = [];
+
+        const ts = m.timestamps;
+
+        const c1 = drawSparkline(
             this.cpuCanvasRef.el,
             m.cpu.filter(v => v !== null),
-            "#0d6efd", "rgba(13,110,253,0.15)"
+            "#0d6efd", "rgba(13,110,253,0.15)",
+            ts, v => `${v.toFixed(1)}%`, "CPU"
         );
 
-        drawSparkline(
+        const c2 = drawSparkline(
             this.ramCanvasRef.el,
             m.ram.filter(v => v !== null),
-            "#198754", "rgba(25,135,84,0.15)"
+            "#198754", "rgba(25,135,84,0.15)",
+            ts, v => `${v.toFixed(1)}%`, "RAM"
         );
 
         // Network: scale to max seen
         const allNet = [...m.netRecv, ...m.netSent].filter(v => v !== null);
         const maxKbps = allNet.length ? Math.max(...allNet, 1) : 1;
-        drawNetSparkline(
+        const fmtNet = v => v >= 1024 ? `${(v / 1024).toFixed(1)} MB/s` : `${v.toFixed(1)} KB/s`;
+        const c3 = drawNetSparkline(
             this.netCanvasRef.el,
             m.netRecv.filter(v => v !== null),
             m.netSent.filter(v => v !== null),
-            maxKbps
+            maxKbps, ts, fmtNet
         );
 
+        this._chartCleanups = [c1, c2, c3];
+
         if (this.gpuCanvasRef.el && m.gpu.some(v => v !== null)) {
-            drawSparkline(
+            const c4 = drawSparkline(
                 this.gpuCanvasRef.el,
                 m.gpu.filter(v => v !== null),
-                "#dc3545", "rgba(220,53,69,0.15)"
+                "#dc3545", "rgba(220,53,69,0.15)",
+                ts, v => `${v.toFixed(1)}%`, "GPU"
             );
+            this._chartCleanups.push(c4);
         }
     }
 

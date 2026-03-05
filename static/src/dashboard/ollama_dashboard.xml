@@ -204,7 +204,7 @@
                                                     <t t-esc="latestRam"/>%
                                                 </strong>
                                                 <t t-if="state.metrics.latest.ram_used_gb !== null">
-                                                    &amp;nbsp;<span class="text-muted">(<t t-esc="state.metrics.latest.ram_used_gb"/> GB)</span>
+                                                    <span class="text-muted ms-1">(<t t-esc="state.metrics.latest.ram_used_gb"/> GB)</span>
                                                 </t>
                                             </t>
                                             <t t-else="">—</t>
@@ -227,7 +227,7 @@
                                         <span class="text-muted" style="font-size:12px;">
                                             <t t-if="latestNetRecv !== null">
                                                 <span class="text-primary">↓ <t t-esc="formatKbps(latestNetRecv)"/></span>
-                                                &amp;nbsp;
+                                                <span class="mx-1">·</span>
                                                 <span style="color:#fd7e14;">↑ <t t-esc="formatKbps(latestNetSent)"/></span>
                                             </t>
                                             <t t-else="">—</t>
