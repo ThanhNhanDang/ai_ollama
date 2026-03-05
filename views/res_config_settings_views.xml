@@ -9,14 +9,26 @@
             <xpath expr="//block[@name='ai_providers']" position="inside">
                 <setting id="ollama_provider" string="Ollama - Local LLM" help="Connect to a local Ollama server for private AI processing" groups="base.group_system">
                     <field name="ollama_enabled" />
-                    <div class="text-muted mt-2">
-                        Run AI models locally without cloud API keys.
-                        <a href="https://ollama.com" target="_blank">Learn more about Ollama</a>
+                    <div class="text-muted">
+                        Run AI models locally — no cloud API keys needed.
+                        <a href="https://ollama.com" target="_blank">Learn more</a>
                     </div>
                     <group>
                         <div class="flex-grow-1 mt-2">
                             <label for="ollama_base_url" string="Server URL"/>
                             <field name="ollama_base_url" placeholder="http://ollama:11434" nolabel="1" class="w-100"/>
+                        </div>
+                    </group>
+
+                    <!-- Installed Models -->
+                    <group invisible="not ollama_enabled">
+                        <separator string="Installed Models"/>
+                        <div class="flex-grow-1">
+                            <field name="ollama_installed_models" widget="text" readonly="1" nolabel="1" class="w-100" style="white-space: pre-wrap; font-family: monospace; min-height: 40px; background: #f8f9fa; padding: 8px; border-radius: 4px; font-size: 13px;"/>
+                            <div class="d-flex gap-2 mt-2">
+                                <button name="action_ollama_refresh_models" type="object" string="↻ Refresh" class="btn-sm btn-link p-0"/>
+                                <button name="%(ai_ollama.action_ollama_pull_wizard)d" type="action" string="⬇ Pull New Model" class="btn-sm btn-link p-0"/>
+                            </div>
                         </div>
                     </group>
                 </setting>

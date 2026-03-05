@@ -1,4 +1,2 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
-from . import models
-from . import wizard
-from .utils import ollama_patch
+from . import ollama_pull_wizard

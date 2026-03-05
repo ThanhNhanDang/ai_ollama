@@ -1,7 +1,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'AI Ollama - Local LLM',
-    'version': '1.0',
+    'version': '1.1',
     'category': 'Hidden',
     'summary': 'Integrate Ollama (local LLM) with Odoo AI features',
     'description': """
@@ -14,9 +14,12 @@
         - No API key required
         - Data stays on your server
         - Compatible with all Odoo AI features (chat, agents, etc.)
+        - Pull models directly from settings UI
     """,
     'depends': ['ai', 'ai_app'],
     'data': [
+        'security/ir.model.access.csv',
+        'wizard/ollama_pull_wizard_views.xml',
         'views/res_config_settings_views.xml',
     ],
     'installable': True,
