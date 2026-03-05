@@ -109,7 +109,11 @@ function _drawSeries(ctx, padded, W, H, max, color, fillColor) {
     ctx.stroke();
 }
 
-function _drawTooltip(ctx, hoverIdx, W, H, series, maxArr, ts) {
+/**
+ * Draw only the crosshair vertical line + highlight dots on the canvas.
+ * The tooltip box itself is rendered as an HTML overlay (see createHtmlTooltip).
+ */
+function _drawCrosshair(ctx, hoverIdx, W, H, series, maxArr) {
     const xStep = W / (CHART_MAX_POINTS - 1);
     const x = hoverIdx * xStep;
 
@@ -135,65 +139,85 @@ function _drawTooltip(ctx, hoverIdx, W, H, series, maxArr, ts) {
         ctx.lineWidth = 1.5;
         ctx.stroke();
     });
-
-    const timeStr = ts ? new Date(ts).toLocaleTimeString() : "";
-    const activeSeries = series.filter(s => s.value !== null);
-    const lines = [];
-    if (timeStr) lines.push({ text: timeStr, isTime: true });
-    activeSeries.forEach(s => lines.push({ text: `${s.label}: ${s.formatted}`, color: s.color, isTime: false }));
-
-    const PAD = 10;
-    const LINE_H = 17;
-
-    // Measure actual text widths to size box correctly
-    ctx.font = "bold 11px -apple-system, BlinkMacSystemFont, sans-serif";
-    const timeW = timeStr ? ctx.measureText(timeStr).width : 0;
-    ctx.font = "12px -apple-system, BlinkMacSystemFont, sans-serif";
-    const seriesW = activeSeries.length
-        ? Math.max(...activeSeries.map(s => ctx.measureText(`${s.label}: ${s.formatted}`).width + 16))
-        : 0;
-    const boxW = Math.ceil(Math.max(timeW, seriesW)) + PAD * 2 + 4;
-    const boxH = PAD * 2 + lines.length * LINE_H;
-    let bx = x + 12;
-    if (bx + boxW > W) bx = x - boxW - 12;
-    const by = Math.min(4, H - boxH - 4);
-
-    ctx.shadowColor = "rgba(0,0,0,0.25)";
-    ctx.shadowBlur = 8;
-    ctx.fillStyle = "rgba(25,25,25,0.92)";
-    const r = 6;
-    ctx.beginPath();
-    ctx.moveTo(bx + r, by);
-    ctx.lineTo(bx + boxW - r, by);
-    ctx.quadraticCurveTo(bx + boxW, by, bx + boxW, by + r);
-    ctx.lineTo(bx + boxW, by + boxH - r);
-    ctx.quadraticCurveTo(bx + boxW, by + boxH, bx + boxW - r, by + boxH);
-    ctx.lineTo(bx + r, by + boxH);
-    ctx.quadraticCurveTo(bx, by + boxH, bx, by + boxH - r);
-    ctx.lineTo(bx, by + r);
-    ctx.quadraticCurveTo(bx, by, bx + r, by);
-    ctx.closePath();
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    lines.forEach((line, i) => {
-        const ty = by + PAD + i * LINE_H + LINE_H / 2 + 3;
-        if (line.isTime) {
-            ctx.font = "bold 11px -apple-system, BlinkMacSystemFont, sans-serif";
-            ctx.fillStyle = "#aaa";
-            ctx.fillText(line.text, bx + PAD, ty);
-        } else {
-            ctx.beginPath();
-            ctx.arc(bx + PAD + 4, ty - 4, 3.5, 0, Math.PI * 2);
-            ctx.fillStyle = line.color;
-            ctx.fill();
-            ctx.font = "12px -apple-system, BlinkMacSystemFont, sans-serif";
-            ctx.fillStyle = "#eee";
-            ctx.fillText(line.text, bx + PAD + 13, ty);
-        }
-    });
-
     ctx.restore();
+}
+
+/**
+ * Create and manage an HTML tooltip element that floats above the canvas.
+ * The canvas wrapper must have `position: relative` (added via CSS).
+ * Returns { show(x, series, ts), hide(), destroy() }.
+ */
+function createHtmlTooltip(canvas) {
+    const wrapper = canvas.parentElement;
+
+    const tip = document.createElement("div");
+    tip.className = "o-sparkline-tooltip";
+    tip.style.cssText = [
+        "position:absolute",
+        "pointer-events:none",
+        "z-index:9999",
+        "display:none",
+        "background:rgba(25,25,25,0.92)",
+        "color:#eee",
+        "border-radius:6px",
+        "padding:8px 12px",
+        "font:12px -apple-system,BlinkMacSystemFont,sans-serif",
+        "white-space:nowrap",
+        "box-shadow:0 2px 8px rgba(0,0,0,0.3)",
+        "line-height:1.6",
+    ].join(";");
+    wrapper.appendChild(tip);
+
+    function show(canvasX, series, ts) {
+        const activeSeries = series.filter(s => s.value !== null);
+        if (!activeSeries.length) { tip.style.display = "none"; return; }
+
+        // Build inner HTML
+        let html = "";
+        if (ts) {
+            html += `<div style="font-size:11px;font-weight:bold;color:#aaa;margin-bottom:3px">`
+                  + new Date(ts).toLocaleTimeString()
+                  + `</div>`;
+        }
+        activeSeries.forEach(s => {
+            html += `<div style="display:flex;align-items:center;gap:6px">`
+                  + `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color};flex-shrink:0"></span>`
+                  + `<span>${s.label}: <strong>${s.formatted}</strong></span>`
+                  + `</div>`;
+        });
+        tip.innerHTML = html;
+        tip.style.display = "block";
+
+        // Position: align horizontally relative to canvas, float above canvas
+        const canvasRect  = canvas.getBoundingClientRect();
+        const wrapperRect = wrapper.getBoundingClientRect();
+
+        // tipWidth may not be ready yet on first paint — use offsetWidth after display:block
+        const tipW = tip.offsetWidth;
+        const tipH = tip.offsetHeight;
+
+        // X: follow cursor inside canvas, flip if overflowing wrapper
+        const canvasLeftInWrapper = canvasRect.left - wrapperRect.left;
+        let left = canvasLeftInWrapper + canvasX + 14;
+        if (left + tipW > wrapperRect.width - 4) {
+            left = canvasLeftInWrapper + canvasX - tipW - 14;
+        }
+        left = Math.max(2, left);
+
+        // Y: sit just above the canvas, never overflow the top of wrapper
+        const canvasTopInWrapper = canvasRect.top - wrapperRect.top;
+        let top = canvasTopInWrapper - tipH - 6;
+        if (top < 2) top = canvasTopInWrapper + canvasRect.height + 6; // fallback: below canvas
+
+        tip.style.left = `${Math.round(left)}px`;
+        tip.style.top  = `${Math.round(top)}px`;
+    }
+
+    function hide() { tip.style.display = "none"; }
+
+    function destroy() { tip.remove(); }
+
+    return { show, hide, destroy };
 }
 
 /**
@@ -207,6 +231,7 @@ function createSparkline(canvas, color, fillColor, formatFn, label) {
     const { W, H } = _setupCanvas(canvas);
     const ctx = canvas.getContext("2d");
     const fmt = formatFn || (v => `${v.toFixed(1)}%`);
+    const htmlTip = createHtmlTooltip(canvas);
 
     let _padded = Array(CHART_MAX_POINTS).fill(null);
     let _paddedTs = Array(CHART_MAX_POINTS).fill(null);
@@ -216,10 +241,8 @@ function createSparkline(canvas, color, fillColor, formatFn, label) {
         ctx.clearRect(0, 0, W, H);
         _drawSeries(ctx, _padded, W, H, 100, color, fillColor);
         if (_hoverIdx !== null && _padded[_hoverIdx] !== null) {
-            _drawTooltip(ctx, _hoverIdx, W, H,
-                [{ value: _padded[_hoverIdx], label, color, formatted: fmt(_padded[_hoverIdx]) }],
-                [100], _paddedTs[_hoverIdx]
-            );
+            const series = [{ value: _padded[_hoverIdx], label, color, formatted: fmt(_padded[_hoverIdx]) }];
+            _drawCrosshair(ctx, _hoverIdx, W, H, series, [100]);
         }
     };
 
@@ -228,8 +251,15 @@ function createSparkline(canvas, color, fillColor, formatFn, label) {
         const mx = (e.clientX - rect.left) * (W / rect.width);
         _hoverIdx = Math.max(0, Math.min(CHART_MAX_POINTS - 1, Math.round(mx / (W / (CHART_MAX_POINTS - 1)))));
         render();
+        if (_padded[_hoverIdx] !== null) {
+            const xStep = W / (CHART_MAX_POINTS - 1);
+            const series = [{ value: _padded[_hoverIdx], label, color, formatted: fmt(_padded[_hoverIdx]) }];
+            htmlTip.show(_hoverIdx * xStep, series, _paddedTs[_hoverIdx]);
+        } else {
+            htmlTip.hide();
+        }
     };
-    const onLeave = () => { _hoverIdx = null; render(); };
+    const onLeave = () => { _hoverIdx = null; render(); htmlTip.hide(); };
 
     canvas.addEventListener("mousemove", onMove);
     canvas.addEventListener("mouseleave", onLeave);
@@ -243,6 +273,7 @@ function createSparkline(canvas, color, fillColor, formatFn, label) {
         destroy() {
             canvas.removeEventListener("mousemove", onMove);
             canvas.removeEventListener("mouseleave", onLeave);
+            htmlTip.destroy();
         },
     };
 }
@@ -252,6 +283,7 @@ function createNetSparkline(canvas, formatFn) {
     const { W, H } = _setupCanvas(canvas);
     const ctx = canvas.getContext("2d");
     const fmt = formatFn || (v => v >= 1024 ? `${(v / 1024).toFixed(1)} MB/s` : `${v.toFixed(1)} KB/s`);
+    const htmlTip = createHtmlTooltip(canvas);
 
     let _paddedRecv = Array(CHART_MAX_POINTS).fill(null);
     let _paddedSent = Array(CHART_MAX_POINTS).fill(null);
@@ -264,13 +296,11 @@ function createNetSparkline(canvas, formatFn) {
         _drawSeries(ctx, _paddedRecv, W, H, _maxKbps, "#0d6efd", "rgba(13,110,253,0.15)");
         _drawSeries(ctx, _paddedSent, W, H, _maxKbps, "#fd7e14", "rgba(253,126,20,0.15)");
         if (_hoverIdx !== null && (_paddedRecv[_hoverIdx] !== null || _paddedSent[_hoverIdx] !== null)) {
-            _drawTooltip(ctx, _hoverIdx, W, H,
-                [
-                    { value: _paddedRecv[_hoverIdx], label: "↓ Recv", color: "#0d6efd", formatted: fmt(_paddedRecv[_hoverIdx] ?? 0) },
-                    { value: _paddedSent[_hoverIdx], label: "↑ Sent", color: "#fd7e14", formatted: fmt(_paddedSent[_hoverIdx] ?? 0) },
-                ],
-                [_maxKbps, _maxKbps], _paddedTs[_hoverIdx]
-            );
+            const series = [
+                { value: _paddedRecv[_hoverIdx], label: "↓ Recv", color: "#0d6efd", formatted: fmt(_paddedRecv[_hoverIdx] ?? 0) },
+                { value: _paddedSent[_hoverIdx], label: "↑ Sent", color: "#fd7e14", formatted: fmt(_paddedSent[_hoverIdx] ?? 0) },
+            ];
+            _drawCrosshair(ctx, _hoverIdx, W, H, series, [_maxKbps, _maxKbps]);
         }
     };
 
@@ -279,8 +309,18 @@ function createNetSparkline(canvas, formatFn) {
         const mx = (e.clientX - rect.left) * (W / rect.width);
         _hoverIdx = Math.max(0, Math.min(CHART_MAX_POINTS - 1, Math.round(mx / (W / (CHART_MAX_POINTS - 1)))));
         render();
+        if (_paddedRecv[_hoverIdx] !== null || _paddedSent[_hoverIdx] !== null) {
+            const xStep = W / (CHART_MAX_POINTS - 1);
+            const series = [
+                { value: _paddedRecv[_hoverIdx], label: "↓ Recv", color: "#0d6efd", formatted: fmt(_paddedRecv[_hoverIdx] ?? 0) },
+                { value: _paddedSent[_hoverIdx], label: "↑ Sent", color: "#fd7e14", formatted: fmt(_paddedSent[_hoverIdx] ?? 0) },
+            ];
+            htmlTip.show(_hoverIdx * xStep, series, _paddedTs[_hoverIdx]);
+        } else {
+            htmlTip.hide();
+        }
     };
-    const onLeave = () => { _hoverIdx = null; render(); };
+    const onLeave = () => { _hoverIdx = null; render(); htmlTip.hide(); };
 
     canvas.addEventListener("mousemove", onMove);
     canvas.addEventListener("mouseleave", onLeave);
@@ -296,6 +336,7 @@ function createNetSparkline(canvas, formatFn) {
         destroy() {
             canvas.removeEventListener("mousemove", onMove);
             canvas.removeEventListener("mouseleave", onLeave);
+            htmlTip.destroy();
         },
     };
 }

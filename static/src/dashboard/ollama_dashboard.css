@@ -5,3 +5,20 @@
 .o_ollama_dashboard .cursor-pointer {
     cursor: pointer;
 }
+
+/* HTML tooltip overlay cho sparkline charts */
+.o_ollama_dashboard .o-sparkline-tooltip {
+    position: absolute;
+    pointer-events: none;
+    z-index: 9999;
+    background: rgba(25, 25, 25, 0.92);
+    color: #eee;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font: 12px -apple-system, BlinkMacSystemFont, sans-serif;
+    white-space: nowrap;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+    line-height: 1.6;
+    /* Smooth appear/disappear */
+    transition: opacity 0.08s ease;
+}
