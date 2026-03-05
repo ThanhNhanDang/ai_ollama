@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<odoo>
+
+    <record id="res_config_settings_view_form_ollama" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.ai.ollama</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="ai.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//setting[@id='google_provider']" position="after">
+                <setting id="ollama_provider" string="Ollama - Local LLM" help="Connect to a local Ollama server for private AI processing" groups="base.group_system">
+                    <field name="ollama_enabled" />
+                    <div class="text-muted mt-2">
+                        Run AI models locally without cloud API keys.
+                        <a href="https://ollama.com" target="_blank">Learn more about Ollama</a>
+                    </div>
+                    <group>
+                        <div class="flex-grow-1 mt-2">
+                            <label for="ollama_base_url" string="Server URL"/>
+                            <field name="ollama_base_url" placeholder="http://ollama:11434" nolabel="1" class="w-100"/>
+                        </div>
+                    </group>
+                </setting>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>
