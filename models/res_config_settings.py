@@ -3,6 +3,7 @@ import logging
 import requests
 
 from odoo import api, fields, models
+from odoo.exceptions import AccessError
 
 _logger = logging.getLogger(__name__)
 
@@ -30,8 +31,13 @@ class ResConfigSettings(models.TransientModel):
         for record in self:
             record.ollama_enabled = bool(record.ollama_base_url)
 
+    def _check_admin(self):
+        if not self.env.user.has_group('base.group_system'):
+            raise AccessError("Access to Ollama Dashboard is restricted to administrators.")
+
     def action_ollama_open_dashboard(self):
         """Open the Ollama Dashboard client action."""
+        self._check_admin()
         return {
             'type': 'ir.actions.client',
             'tag': 'ai_ollama.Dashboard',
@@ -50,6 +56,7 @@ class ResConfigSettings(models.TransientModel):
     @api.model
     def get_ollama_dashboard_data(self):
         """RPC endpoint: return all dashboard data as a single JSON dict."""
+        self._check_admin()
         base_url = self.env["ir.config_parameter"].sudo().get_param(
             "ai.ollama_base_url", "http://ollama:11434"
         ).rstrip("/")
@@ -106,6 +113,7 @@ class ResConfigSettings(models.TransientModel):
         Called by the dashboard JS every 2s — proxies to the sidecar so the
         browser never makes a direct HTTP call (avoids Mixed Content errors).
         """
+        self._check_admin()
         base_url = self.env["ir.config_parameter"].sudo().get_param(
             "ai.ollama_base_url", "http://ollama:11434"
         ).rstrip("/")

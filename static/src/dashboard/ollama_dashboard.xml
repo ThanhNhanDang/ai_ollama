@@ -13,8 +13,14 @@
                     </button>
                 </div>
 
+                <!-- Access denied -->
+                <div t-if="!state.isAdmin" class="alert alert-danger">
+                    <i class="fa fa-lock me-2"/>
+                    Access restricted. Only administrators can view the Ollama Dashboard.
+                </div>
+
                 <!-- Loading -->
-                <div t-if="state.loading" class="text-center py-5">
+                <div t-elif="state.loading" class="text-center py-5">
                     <i class="fa fa-spinner fa-spin fa-2x text-muted"/>
                     <p class="text-muted mt-2">Loading server data...</p>
                 </div>
@@ -31,19 +37,23 @@
                     <!-- Active Pull Tasks -->
                     <div t-if="activePullTasks.length" class="mb-4">
                         <t t-foreach="activePullTasks" t-as="task" t-key="task.name">
-                            <div class="alert alert-info d-flex align-items-center mb-2">
+                            <div class="alert d-flex align-items-center mb-2"
+                                 t-att-class="task.progress_pct >= 100 ? 'alert-warning' : 'alert-info'">
                                 <div class="flex-grow-1">
                                     <div class="d-flex justify-content-between align-items-center mb-1">
                                         <span>
                                             <i class="fa fa-spinner fa-spin me-2"/>
                                             <strong>Pulling <t t-esc="task.name"/></strong>
                                         </span>
-                                        <span class="badge text-bg-info">
-                                            <t t-esc="task.progress_pct"/>%
+                                        <span class="badge"
+                                              t-att-class="task.progress_pct >= 100 ? 'text-bg-warning' : 'text-bg-info'">
+                                            <t t-if="task.progress_pct >= 100">Finalizing...</t>
+                                            <t t-else=""><t t-esc="task.progress_pct"/>%</t>
                                         </span>
                                     </div>
                                     <div class="progress" style="height: 6px;">
-                                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-info"
+                                        <div class="progress-bar progress-bar-striped progress-bar-animated"
+                                             t-att-class="task.progress_pct >= 100 ? 'bg-warning' : 'bg-info'"
                                              t-attf-style="width: {{ task.progress_pct }}%"/>
                                     </div>
                                     <small class="text-muted mt-1 d-block">
@@ -52,8 +62,8 @@
                                 </div>
                                 <button class="btn btn-sm btn-outline-secondary ms-3"
                                         t-on-click="() => this.onDismissTask(task.name)"
-                                        title="Dismiss">
-                                    <i class="fa fa-times"/>
+                                        title="Stop pull">
+                                    <i class="fa fa-stop me-1"/>Stop
                                 </button>
                             </div>
                         </t>
@@ -351,74 +361,69 @@
                             <h6 class="mb-0"><i class="fa fa-download me-1"/> Pull New Model</h6>
                         </div>
                         <div class="card-body">
-                            <div class="row align-items-end g-3">
-                                <div class="col-md-6">
-                                    <label class="form-label">Search and select a model</label>
-                                    <div class="position-relative">
-                                        <div class="input-group">
-                                            <span class="input-group-text">
-                                                <i class="fa fa-search"/>
-                                            </span>
-                                            <input type="text"
-                                                   class="form-control"
-                                                   placeholder="Type to search models..."
-                                                   t-att-value="state.searchQuery"
-                                                   t-on-input="onSearchInput"
-                                                   t-on-focus="onSearchFocus"
-                                                   t-on-blur="onSearchBlur"
-                                                   t-att-disabled="state.pulling"/>
-                                            <button t-if="state.pullModelId"
-                                                    class="btn btn-outline-secondary"
-                                                    t-on-click="onClearSelection"
-                                                    type="button"
-                                                    title="Clear selection">
-                                                <i class="fa fa-times"/>
-                                            </button>
-                                        </div>
-                                        <!-- Dropdown list -->
-                                        <div t-if="state.dropdownOpen and filteredModels.length"
-                                             class="position-absolute w-100 bg-white border rounded-bottom shadow-sm"
-                                             style="z-index: 1050; max-height: 250px; overflow-y: auto; top: 100%;">
-                                            <t t-foreach="filteredModels" t-as="m" t-key="m.id">
-                                                <div t-att-class="'px-3 py-2 d-flex justify-content-between align-items-center cursor-pointer ' + (m.installed ? 'text-muted bg-light' : 'hover-bg-light')"
-                                                     t-on-mousedown.prevent="() => !m.installed and this.onSelectModel(m.id)"
-                                                     style="cursor: pointer;"
-                                                     t-att-style="m.installed ? 'cursor: not-allowed; opacity: 0.6;' : 'cursor: pointer;'">
-                                                    <div>
-                                                        <span t-att-class="m.installed ? '' : 'fw-semibold'">
-                                                            <t t-esc="m.name"/>
-                                                        </span>
-                                                        <small class="text-muted ms-2"><t t-esc="m.size"/></small>
-                                                    </div>
-                                                    <span t-if="m.installed" class="badge text-bg-success">
-                                                        <i class="fa fa-check me-1"/>Installed
-                                                    </span>
-                                                </div>
-                                            </t>
-                                        </div>
-                                        <!-- No results -->
-                                        <div t-if="state.dropdownOpen and !filteredModels.length and state.searchQuery"
-                                             class="position-absolute w-100 bg-white border rounded-bottom shadow-sm p-3 text-muted"
-                                             style="z-index: 1050; top: 100%;">
-                                            No models match "<t t-esc="state.searchQuery"/>"
-                                        </div>
+                            <div style="max-width: 600px;">
+                                <label class="form-label">Search and select a model</label>
+                                <div class="position-relative">
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="fa fa-search"/>
+                                        </span>
+                                        <input type="text"
+                                               class="form-control"
+                                               placeholder="Type to search models..."
+                                               t-att-value="state.searchQuery"
+                                               t-on-input="onSearchInput"
+                                               t-on-focus="onSearchFocus"
+                                               t-on-blur="onSearchBlur"
+                                               t-att-disabled="state.pulling"/>
+                                        <button t-if="state.pullModelId"
+                                                class="btn btn-outline-secondary"
+                                                t-on-click="onClearSelection"
+                                                type="button"
+                                                title="Clear selection">
+                                            <i class="fa fa-times"/>
+                                        </button>
+                                        <button class="btn btn-primary"
+                                                t-on-click="onPullModel"
+                                                t-att-disabled="!canPull">
+                                            <i t-att-class="state.pulling ? 'fa fa-spinner fa-spin me-1' : 'fa fa-download me-1'"/>
+                                            <t t-if="state.pulling">Pulling...</t>
+                                            <t t-else="">Pull Model</t>
+                                        </button>
                                     </div>
-                                    <!-- Selected model indicator -->
-                                    <div t-if="state.pullModelId" class="mt-1">
-                                        <small class="text-primary">
-                                            <i class="fa fa-check-circle me-1"/>
-                                            Selected: <strong t-esc="state.pullModelId"/>
-                                        </small>
+                                    <!-- Dropdown list -->
+                                    <div t-if="state.dropdownOpen and filteredModels.length"
+                                         class="position-absolute bg-white border rounded-bottom shadow-sm"
+                                         style="z-index: 1050; max-height: 250px; overflow-y: auto; top: 100%; left: 0; right: 0;">
+                                        <t t-foreach="filteredModels" t-as="m" t-key="m.id">
+                                            <div t-att-class="'px-3 py-2 d-flex justify-content-between align-items-center ' + (m.installed ? 'text-muted bg-light' : 'hover-bg-light')"
+                                                 t-on-mousedown.prevent="() => !m.installed and this.onSelectModel(m.id)"
+                                                 t-att-style="m.installed ? 'cursor: not-allowed; opacity: 0.6;' : 'cursor: pointer;'">
+                                                <div>
+                                                    <span t-att-class="m.installed ? '' : 'fw-semibold'">
+                                                        <t t-esc="m.name"/>
+                                                    </span>
+                                                    <small class="text-muted ms-2"><t t-esc="m.size"/></small>
+                                                </div>
+                                                <span t-if="m.installed" class="badge text-bg-success">
+                                                    <i class="fa fa-check me-1"/>Installed
+                                                </span>
+                                            </div>
+                                        </t>
+                                    </div>
+                                    <!-- No results -->
+                                    <div t-if="state.dropdownOpen and !filteredModels.length and state.searchQuery"
+                                         class="position-absolute bg-white border rounded-bottom shadow-sm p-3 text-muted"
+                                         style="z-index: 1050; top: 100%; left: 0; right: 0;">
+                                        No models match "<t t-esc="state.searchQuery"/>"
                                     </div>
                                 </div>
-                                <div class="col-md-3">
-                                    <button class="btn btn-primary"
-                                            t-on-click="onPullModel"
-                                            t-att-disabled="!canPull">
-                                        <i t-att-class="state.pulling ? 'fa fa-spinner fa-spin me-1' : 'fa fa-download me-1'"/>
-                                        <t t-if="state.pulling">Pulling...</t>
-                                        <t t-else="">Pull Model</t>
-                                    </button>
+                                <!-- Selected model indicator -->
+                                <div t-if="state.pullModelId" class="mt-1">
+                                    <small class="text-primary">
+                                        <i class="fa fa-check-circle me-1"/>
+                                        Selected: <strong t-esc="state.pullModelId"/>
+                                    </small>
                                 </div>
                             </div>
 

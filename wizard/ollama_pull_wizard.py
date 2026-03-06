@@ -152,12 +152,25 @@ class OllamaPullWizard(models.TransientModel):
                 completed = data.get("completed", 0)
                 status_text = data.get("status", "Downloading...")
 
+                with _pull_lock:
+                    current = _pull_tasks.get(model_name, {})
+                    # Check if task was cancelled while downloading
+                    if current.get("status") == "cancelled":
+                        return
+                    prev_pct = current.get("progress_pct", 0)
+
                 if total > 0:
                     pct = round(completed / total * 100)
                 else:
                     pct = 0
 
+                # Never let progress go backwards (Ollama resets completed=0 for
+                # each finalization phase: verifying sha256, writing manifest, etc.)
+                pct = max(pct, prev_pct)
+
                 with _pull_lock:
+                    if _pull_tasks.get(model_name, {}).get("status") == "cancelled":
+                        return
                     _pull_tasks[model_name] = {
                         "status": "pulling",
                         "progress_pct": pct,
@@ -166,32 +179,35 @@ class OllamaPullWizard(models.TransientModel):
                     }
 
             with _pull_lock:
-                _pull_tasks[model_name] = {
-                    "status": "done",
-                    "progress_pct": 100,
-                    "status_text": "Complete",
-                    "error": None,
-                }
+                if _pull_tasks.get(model_name, {}).get("status") != "cancelled":
+                    _pull_tasks[model_name] = {
+                        "status": "done",
+                        "progress_pct": 100,
+                        "status_text": "Complete",
+                        "error": None,
+                    }
 
             _logger.info("AI Ollama: Background pull complete for '%s'", model_name)
 
         except requests.ConnectionError:
             with _pull_lock:
-                _pull_tasks[model_name] = {
-                    "status": "error",
-                    "progress_pct": 0,
-                    "status_text": "Connection failed",
-                    "error": f"Cannot connect to Ollama at {base_url}",
-                }
+                if _pull_tasks.get(model_name, {}).get("status") != "cancelled":
+                    _pull_tasks[model_name] = {
+                        "status": "error",
+                        "progress_pct": 0,
+                        "status_text": "Connection failed",
+                        "error": f"Cannot connect to Ollama at {base_url}",
+                    }
         except Exception as e:
             _logger.exception("AI Ollama: Unexpected error pulling '%s'", model_name)
             with _pull_lock:
-                _pull_tasks[model_name] = {
-                    "status": "error",
-                    "progress_pct": 0,
-                    "status_text": "Unexpected error",
-                    "error": str(e)[:500],
-                }
+                if _pull_tasks.get(model_name, {}).get("status") != "cancelled":
+                    _pull_tasks[model_name] = {
+                        "status": "error",
+                        "progress_pct": 0,
+                        "status_text": "Unexpected error",
+                        "error": str(e)[:500],
+                    }
 
     @api.model
     def get_pull_progress(self, model_name):
@@ -210,9 +226,16 @@ class OllamaPullWizard(models.TransientModel):
 
     @api.model
     def clear_pull_task(self, model_name):
-        """RPC endpoint: clear a finished/errored pull task."""
+        """RPC endpoint: clear a finished/errored pull task.
+        If still pulling, mark as cancelled so the background thread stops writing results.
+        """
         with _pull_lock:
-            _pull_tasks.pop(model_name, None)
+            task = _pull_tasks.get(model_name)
+            if task and task.get("status") == "pulling":
+                # Signal the background thread to stop, then remove
+                _pull_tasks[model_name] = {"status": "cancelled"}
+            else:
+                _pull_tasks.pop(model_name, None)
         return True
 
     @api.model

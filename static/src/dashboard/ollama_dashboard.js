@@ -3,7 +3,9 @@
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 import { standardActionServiceProps } from "@web/webclient/actions/action_service";
+import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
 import { Component, useState, onWillStart, onWillUnmount, useRef, onMounted } from "@odoo/owl";
+import { user } from "@web/core/user";
 
 const STORAGE_KEY = "ollama_pull_tasks";
 
@@ -349,8 +351,10 @@ export class OllamaDashboard extends Component {
     setup() {
         this.orm = useService("orm");
         this.notification = useService("notification");
+        this.dialog = useService("dialog");
 
         this.state = useState({
+            isAdmin: false,
             loading: true,
             pulling: false,
             pullModelId: "",
@@ -385,6 +389,8 @@ export class OllamaDashboard extends Component {
         this._metricsInterval = null;
 
         onWillStart(async () => {
+            this.state.isAdmin = await user.hasGroup("base.group_system");
+            if (!this.state.isAdmin) return;
             this._restorePullTasks();
             await this.loadData();
             this._startPollingIfNeeded();
@@ -425,6 +431,8 @@ export class OllamaDashboard extends Component {
                 for (const [k, v] of Object.entries(JSON.parse(stored))) {
                     this.state.pullTasks[k] = v;
                 }
+                const hasActive = Object.values(this.state.pullTasks).some(t => t.status === "pulling");
+                if (hasActive) this.state.pulling = true;
             }
         } catch {}
     }
@@ -458,7 +466,7 @@ export class OllamaDashboard extends Component {
                     if (serverTask.status === "done") {
                         this.notification.add(`Model "${modelName}" downloaded successfully!`, { type: "success" });
                         await this.orm.call("ollama.pull.wizard", "clear_pull_task", [modelName]);
-                        await this.loadData();
+                        await this.loadData({ silent: true });
                     } else if (serverTask.status === "error") {
                         this.notification.add(serverTask.error || `Failed to pull "${modelName}"`, { type: "danger", sticky: true });
                         await this.orm.call("ollama.pull.wizard", "clear_pull_task", [modelName]);
@@ -547,8 +555,8 @@ export class OllamaDashboard extends Component {
 
     // ── Data loading ──────────────────────────────────────────────────────────
 
-    async loadData() {
-        this.state.loading = true;
+    async loadData({ silent = false } = {}) {
+        if (!silent) this.state.loading = true;
         try {
             this.state.data = await this.orm.call("res.config.settings", "get_ollama_dashboard_data", []);
         } catch {
@@ -593,15 +601,62 @@ export class OllamaDashboard extends Component {
         if (!modelId || !this.state.data) return null;
         const required = MODEL_REQUIRED_RAM_GB[modelId];
         if (!required) return null;
+
         const ram = this.state.data.ram;
+        const gpu = this.state.data.gpu;
+        const loadedModels = this.state.data.loaded_models || [];
+
+        // RAM currently consumed by loaded models (will be freed when they unload)
+        const loadedRamGb  = loadedModels.reduce((s, m) => s + (m.ram_gb  || 0), 0);
+        const loadedVramGb = loadedModels.reduce((s, m) => s + (m.vram_gb || 0), 0);
+
+        // GPU check first — Ollama prefers VRAM when available
+        if (gpu && gpu.total_gb > 0) {
+            // Predicted VRAM when Ollama loads this model: free now + what loaded models will release
+            const gpuPredicted = Math.min(gpu.free_gb + loadedVramGb, gpu.total_gb);
+            if (required <= gpuPredicted) {
+                const pct = required / gpuPredicted;
+                if (pct > 0.9) return {
+                    level: "warning",
+                    message: `Model requires ~${required.toFixed(1)} GB VRAM — ${Math.round(pct * 100)}% of predicted usable VRAM (${gpuPredicted.toFixed(1)} GB). Will nearly max out GPU.`,
+                };
+                return null; // fits comfortably on GPU
+            }
+            // Doesn't fit in VRAM → CPU offload to RAM
+        }
+
+        // RAM check
         if (!ram) return null;
+
+        // Hard hardware limit
         if (required > ram.total_gb) return {
             level: "danger",
-            message: `Model '${modelId}' requires ~${required.toFixed(1)} GB RAM but the server only has ${ram.total_gb} GB total.`,
+            message: `Model requires ~${required.toFixed(1)} GB RAM but hardware only has ${ram.total_gb} GB total. Cannot run this model.`,
         };
-        if (required > ram.available_gb) return {
+
+        // Installed models NOT currently loaded — their RAM is "reserved" potential usage
+        const installedModels = this.state.data.models || [];
+        const loadedNames = new Set(loadedModels.map(m => m.name));
+        const installedNotLoadedRam = installedModels.reduce((s, m) => {
+            if (loadedNames.has(m.name)) return s;
+            const key = m.name.endsWith(":latest") ? m.name.slice(0, -7) : m.name;
+            return s + (MODEL_REQUIRED_RAM_GB[key] || MODEL_REQUIRED_RAM_GB[m.name] || 0);
+        }, 0);
+
+        // Predicted available when Ollama loads this model:
+        // free RAM + RAM held by currently loaded models (will be unloaded)
+        // minus RAM reserved by installed-but-not-loaded models
+        const predictedAvailable = Math.max(0, ram.available_gb + loadedRamGb - installedNotLoadedRam);
+        const osOverhead = ram.total_gb - predictedAvailable;
+
+        if (required > predictedAvailable) return {
+            level: "danger",
+            message: `Model requires ~${required.toFixed(1)} GB RAM but only ~${predictedAvailable.toFixed(1)} GB predicted available (OS/other processes use ~${osOverhead.toFixed(1)} GB, installed models reserve ~${installedNotLoadedRam.toFixed(1)} GB). Cannot run reliably.`,
+        };
+        const pct = required / predictedAvailable;
+        if (pct > 0.75) return {
             level: "warning",
-            message: `Model '${modelId}' requires ~${required.toFixed(1)} GB RAM but only ${ram.available_gb} GB is currently available.`,
+            message: `Model requires ~${required.toFixed(1)} GB — ${Math.round(pct * 100)}% of predicted usable RAM (${predictedAvailable.toFixed(1)} GB). May cause performance issues when loaded.`,
         };
         return null;
     }
@@ -663,9 +718,11 @@ export class OllamaDashboard extends Component {
 
     // ── Pull / Delete / Refresh ───────────────────────────────────────────────
 
-    async onPullModel() {
-        const modelId = this.state.pullModelId;
-        if (!modelId) return;
+    onPullModel() {
+        return this._doPullModel(this.state.pullModelId);
+    }
+
+    async _doPullModel(modelId) {
         this.state.pulling = true;
         this.state.pullTasks[modelId] = { status: "pulling", progress_pct: 0, status_text: "Starting download...", error: null };
         this._savePullTasks();
@@ -682,23 +739,37 @@ export class OllamaDashboard extends Component {
         }
     }
 
-    async onDismissTask(modelName) {
-        delete this.state.pullTasks[modelName];
-        this._savePullTasks();
-        try { await this.orm.call("ollama.pull.wizard", "clear_pull_task", [modelName]); } catch {}
+    onDismissTask(modelName) {
+        this.dialog.add(ConfirmationDialog, {
+            title: "Stop Pull",
+            body: `Stop pulling "${modelName}"? The download will be cancelled.`,
+            confirmLabel: "Stop",
+            confirm: async () => {
+                delete this.state.pullTasks[modelName];
+                this._savePullTasks();
+                try { await this.orm.call("ollama.pull.wizard", "clear_pull_task", [modelName]); } catch {}
+            },
+        });
     }
 
-    async onDeleteModel(modelName) {
-        try {
-            await this.orm.call("ollama.pull.wizard", "action_delete_model", [modelName]);
-            this.notification.add(`Model "${modelName}" deleted.`, { type: "info" });
-            await this.loadData();
-        } catch (e) {
-            this.notification.add(e.data?.message || `Failed to delete "${modelName}"`, { type: "danger" });
-        }
+    onDeleteModel(modelName) {
+        this.dialog.add(ConfirmationDialog, {
+            title: "Delete Model",
+            body: `Delete "${modelName}"? This will remove it from Ollama and free up disk space.`,
+            confirmLabel: "Delete",
+            confirm: async () => {
+                try {
+                    await this.orm.call("ollama.pull.wizard", "action_delete_model", [modelName]);
+                    this.notification.add(`Model "${modelName}" deleted.`, { type: "info" });
+                    await this.loadData({ silent: this.state.pulling });
+                } catch (e) {
+                    this.notification.add(e.data?.message || `Failed to delete "${modelName}"`, { type: "danger" });
+                }
+            },
+        });
     }
 
-    async onRefresh() { await this.loadData(); }
+    async onRefresh() { await this.loadData({ silent: this.state.pulling }); }
 }
 
 registry.category("actions").add("ai_ollama.Dashboard", OllamaDashboard);
